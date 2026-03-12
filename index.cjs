@@ -201,33 +201,33 @@ async function handleRegistration(ctx, userId, text) {
         ctx.session.age = age;
         ctx.session.step = 'gender';
         await ctx.reply('Твой пол?', Markup.keyboard([
-          ['Мужской', 'Женский', 'Другой']
+          ['Парень', 'Девушка',]
         ]).oneTime().resize());
         break;
       case 'gender':
         let gender = '';
-        if (text === 'Мужской') gender = 'male';
-        else if (text === 'Женский') gender = 'female';
+        if (text === 'Парень') gender = 'male';
+        else if (text === 'Девушка') gender = 'female';
         else gender = 'other';
         ctx.session.gender = gender;
         ctx.session.step = 'lookingFor';
-        await ctx.reply('Кого ищешь?', Markup.keyboard([
-          ['Мужчин', 'Женщин', 'Всех']
+        await ctx.reply('Кого будем искать?', Markup.keyboard([
+          ['Парни', 'Девушки', 'Все равно']
         ]).oneTime().resize());
         break;
       case 'lookingFor':
         let lookingFor = '';
-        if (text === 'Мужчин') lookingFor = 'male';
-        else if (text === 'Женщин') lookingFor = 'female';
+        if (text === 'Парни') lookingFor = 'male';
+        else if (text === 'Девушки') lookingFor = 'female';
         else lookingFor = 'all';
         ctx.session.lookingFor = lookingFor;
         ctx.session.step = 'description';
-        await ctx.reply('Напиши немного о себе (интересы, хобби, что ищешь).');
+        await ctx.reply('Напиши немного о себе (Какой запах омежки предпочитаешь?)).');
         break;
       case 'description':
         ctx.session.description = text;
         ctx.session.step = 'photo';
-        await ctx.reply('Отправь своё фото (не файл, а именно как фото).');
+        await ctx.reply('Отправь своё фото.');
         break;
       default:
         ctx.session = null;
