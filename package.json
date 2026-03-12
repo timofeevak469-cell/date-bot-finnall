@@ -1,7 +1,6 @@
 {
   "name": "dating_bot",
   "module": "index.js",
-  "type": "module",
   "private": true,
   "devDependencies": {
     "@types/bun": "latest"
