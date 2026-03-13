@@ -130,7 +130,7 @@ async function showNextLiker(ctx, userId) {
 // Сохраняем в сессию ID текущего просматриваемого лайка
   ctx.session = { viewingLiker: like._id.toString() };
 
-  const caption = ${liker.name}, ${liker.age}\n\n${liker.description};
+  const caption = `${liker.name}, ${liker.age}${liker.username ?  (@${liker.username}) : ''}\n\n${liker.description}`;
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
