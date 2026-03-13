@@ -48,11 +48,10 @@ async function sendLikeNotification(toUserId, fromUserId) {
   const fromUser = await getUser(fromUserId);
   if (!fromUser) return;
 
-  // Проверяем, есть ли непросмотренные лайки у этого пользователя
   const count = await Like.countDocuments({ toUser: toUserId, notified: false });
   const text = count > 1 
-    ? ✨ У тебя `${count} новых лайков! Посмотрим? `
-    : ✨ Кому-то понравилась твоя анкета. Посмотрим?;
+    ? `✨ У тебя ${count} новых лайков! Посмотрим?` 
+    : `✨ Кому-то понравилась твоя анкета. Посмотрим?`;
 
   await bot.telegram.sendMessage(toUserId, text, 
     Markup.inlineKeyboard([
@@ -128,12 +127,10 @@ async function showNextLiker(ctx, userId) {
     return;
   }
 
-  // Сохраняем в сессию ID текущего просматриваемого лайка
+// Сохраняем в сессию ID текущего просматриваемого лайка
   ctx.session = { viewingLiker: like._id.toString() };
 
-  // Добавляем username в caption, если он есть
-  const caption = ${liker.name}, ${liker.age}${liker.username ?  (@${liker.username}) : ''}\n\n${liker.description};
-
+  const caption = ${liker.name}, ${liker.age}\n\n${liker.description};
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
@@ -145,6 +142,7 @@ async function showNextLiker(ctx, userId) {
     ])
   });
 }
+
 // Главное меню
 function mainMenu(user) {
   if (!user) {
@@ -475,8 +473,61 @@ async function handleEdit(ctx, userId, text) {
     await ctx.reply('Ошибка при обновлении описания.');
     ctx.session = null;
   }
-}
+}// Лайк (в просмотре анкет)
+bot.action('like', async (ctx) => {
+  await ctx.answerCbQuery();
+  const fromUserId = ctx.from.id;
+  const toUserId = ctx.session?.viewing;
 
+  if (!toUserId) {
+    await ctx.reply('Ошибка: не выбран пользователь. Начни поиск заново.');
+    return;
+  }
+
+  try {
+    await Like.create({ fromUser: fromUserId, toUser: toUserId });
+
+    const mutual = await Like.findOne({ fromUser: toUserId, toUser: fromUserId });
+
+    if (mutual) {
+      await Match.create({ users: [fromUserId, toUserId] });
+
+      // Получаем данные обоих пользователей
+      const fromUserData = await getUser(fromUserId);
+      const toUserData = await getUser(toUserId);
+
+      // Формируем имя/username для отправителя и получателя
+      const fromName = fromUserData.username ? @${fromUserData.username} : fromUserData.name;
+      const toName = toUserData.username ? @${toUserData.username} : toUserData.name;
+
+      // Сообщение для того, кто поставил лайк
+      await ctx.telegram.sendMessage(
+        fromUserId,
+        🎉 Взаимная симпатия с ${toName}! Напишите ему: t.me/${toUserData.username || ''}\nИмя: ${toUserData.name}
+      );
+
+      // Сообщение для того, кому поставили лайк
+      await ctx.telegram.sendMessage(
+        toUserId,
+        🎉 Взаимная симпатия с ${fromName}! Напишите ему: t.me/${fromUserData.username || ''}\nИмя: ${fromUserData.name}
+      );
+    } else {
+      await ctx.reply('❤️ Лайк отправлен!');
+      // Отправляем уведомление получателю лайка
+      await sendLikeNotification(toUserId, fromUserId);
+    }
+
+    await showNextProfile(ctx, fromUserId);
+  } catch (error) {
+    if (error.code === 11000) {
+      await ctx.reply('Вы уже лайкали этого пользователя.');
+      await showNextProfile(ctx, fromUserId);
+    } else {
+      console.error(error);
+      await ctx.reply('Ошибка при отправке лайка.');
+    }
+  }
+});
 // Обработка меню
 async function handleMenu(ctx, userId, text) {
   const user = await getUser(userId);
