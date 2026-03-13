@@ -131,7 +131,12 @@ async function showNextLiker(ctx, userId) {
 // Сохраняем в сессию ID текущего просматриваемого лайка
   ctx.session = { viewingLiker: like._id.toString() };
 
-  const caption = `${liker.name}, ${liker.age}${liker.username ?  (@${liker.username}) : ''}\n\n${liker.description}`;
+    // Формируем подпись с username
+  let caption = liker.name + ', ' + liker.age;
+  if (liker.username) {
+    caption = caption + ' (@' + liker.username + ')';
+  }
+  caption = caption + '\n\n' + liker.description;
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
@@ -498,20 +503,15 @@ bot.action('like', async (ctx) => {
       const toUserData = await getUser(toUserId);
 
       // Формируем имя/username для отправителя и получателя
-      const fromName = fromUserData.username ? @${fromUserData.username} : fromUserData.name;
-      const toName = toUserData.username ? @${toUserData.username} : toUserData.name;
+      const fromName = fromUserData.username ? '@' + fromUserData.username : fromUserData.name;
+const toName = toUserData.username ? '@' + toUserData.username : toUserData.name;
 
       // Сообщение для того, кто поставил лайк
-      await ctx.telegram.sendMessage(
-        fromUserId,
-        🎉 Взаимная симпатия с ${toName}! Напишите ему: t.me/${toUserData.username || ''}\nИмя: ${toUserData.name}
-      );
+     const msgFrom = '🎉 Взаимная симпатия с ' + toName + '! Напишите ему: t.me/' + (toUserData.username || '') + '\nИмя: ' + toUserData.name;
+await ctx.telegram.sendMessage(fromUserId, msgFrom);
 
-      // Сообщение для того, кому поставили лайк
-      await ctx.telegram.sendMessage(
-        toUserId,
-        🎉 Взаимная симпатия с ${fromName}! Напишите ему: t.me/${fromUserData.username || ''}\nИмя: ${fromUserData.name}
-      );
+const msgTo = '🎉 Взаимная симпатия с ' + fromName + '! Напишите ему: t.me/' + (fromUserData.username || '') + '\nИмя: ' + fromUserData.name;
+await ctx.telegram.sendMessage(toUserId, msgTo);
     } else {
       await ctx.reply('❤️ Лайк отправлен!');
       // Отправляем уведомление получателю лайка
