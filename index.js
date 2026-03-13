@@ -24,7 +24,7 @@ mongoose.connect(process.env.MONGODB_URI)
   })
   .catch(err => console.error('❌ Ошибка подключения к БД:', err));
 
-// Вспомогательные функции
+// ---------- Вспомогательные функции ----------
 async function getUser(telegramId) {
   return await User.findOne({ telegramId });
 }
@@ -39,6 +39,25 @@ async function updateUserField(telegramId, field, value) {
   update[field] = value;
   update.updatedAt = Date.now();
   return await User.findOneAndUpdate({ telegramId }, update, { new: true });
+}
+
+// Функция для отправки уведомления о новом лайке
+async function sendLikeNotification(toUserId, fromUserId) {
+  const toUser = await getUser(toUserId);
+  if (!toUser) return;
+  const fromUser = await getUser(fromUserId);
+  if (!fromUser) return;
+
+  // Проверяем, есть ли непросмотренные лайки у этого пользователя
+  const count = await Like.countDocuments({ toUser: toUserId, notified: false });
+  const text = count > 1 
+    ? ✨ У тебя `${count} новых лайков! Посмотрим? `
+    : ✨ Кому-то понравилась твоя анкета. Посмотрим?;
+
+  await bot.telegram.sendMessage(toUserId, text, 
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Да', 'view_likers'), Markup.button.callback('Нет', 'skip_likers')]
+    ]));
 }
 
 // Показать свою анкету
@@ -88,9 +107,14 @@ async function showNextProfile(ctx, currentUserId) {
   });
 }
 
-// Показать следующего лайкнувшего (если используется)
+// Показать следующего лайкнувшего (для просмотра лайков)
 async function showNextLiker(ctx, userId) {
-  const like = await Like.findOne({ toUser: userId, notified: false }).sort({ createdAt: 1 });
+  // Находим непросмотренные лайки в сторону этого пользователя
+  const like = await Like.findOne({ 
+    toUser: userId, 
+    notified: false 
+  }).sort({ createdAt: 1 }); // сначала старые
+
   if (!like) {
     await ctx.reply('Больше нет анкет для просмотра.');
     return;
@@ -98,12 +122,18 @@ async function showNextLiker(ctx, userId) {
 
   const liker = await User.findOne({ telegramId: like.fromUser });
   if (!liker) {
+    // Странно, но удалим лайк
     await Like.deleteOne({ _id: like._id });
-    return showNextLiker(ctx, userId);
+    await showNextLiker(ctx, userId); // рекурсивно пробуем следующего
+    return;
   }
 
+  // Сохраняем в сессию ID текущего просматриваемого лайка
   ctx.session = { viewingLiker: like._id.toString() };
-  const caption = ` ${liker.name}, ${liker.age}\n\n${liker.description}`;
+
+  // Добавляем username в caption, если он есть
+  const caption = ${liker.name}, ${liker.age}${liker.username ?  (@${liker.username}) : ''}\n\n${liker.description};
+
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
@@ -115,7 +145,6 @@ async function showNextLiker(ctx, userId) {
     ])
   });
 }
-
 // Главное меню
 function mainMenu(user) {
   if (!user) {
