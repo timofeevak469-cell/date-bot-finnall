@@ -2,7 +2,6 @@
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const mongoose = require('mongoose');
-const LocalSession = require('telegraf-session-local');
 
 // Подключаем наши модели
 const User = require('./models/User');
