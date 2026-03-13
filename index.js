@@ -185,7 +185,7 @@ async function handleRegistration(ctx, userId, text) {
         ctx.session.age = age;
         ctx.session.step = 'gender';
         await ctx.reply('Твой пол?', Markup.keyboard([
-          ['Я парень', 'Я девушка,`]
+          ['Я парень', 'Я девушка']
             ]).oneTime().resize());
         break;
       case 'gender':
