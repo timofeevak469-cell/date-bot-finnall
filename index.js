@@ -13,21 +13,19 @@ const Match = require('./models/Match');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // Подключаем сессии (хранятся в файле sessions.json)
-const LocalSession = require('telegraf-session-local');
 bot.use(new LocalSession({ database: 'sessions.json' }).middleware());
 
-// Подключаемся к базе данных MongoDB (локально)
+// Подключаемся к базе данных MongoDB
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('✅ База данных подключена');
-    // Миграция: добавляем поле active старым пользователям (если его нет)
     User.updateMany({ active: { $exists: false } }, { $set: { active: true } })
       .then(result => console.log(`✅ Обновлено ${result.modifiedCount} пользователей: добавлено active=true`))
       .catch(err => console.error('❌ Ошибка при обновлении active:', err));
   })
   .catch(err => console.error('❌ Ошибка подключения к БД:', err));
 
-// ---------- Вспомогательные функции ----------
+// Вспомогательные функции
 async function getUser(telegramId) {
   return await User.findOne({ telegramId });
 }
@@ -50,7 +48,7 @@ async function showMyProfile(ctx, user) {
   await ctx.replyWithPhoto(user.photoFileId, { caption });
 }
 
-// Показать следующую анкету для лайков
+// Показать следующую анкету
 async function showNextProfile(ctx, currentUserId) {
   const currentUser = await getUser(currentUserId);
   if (!currentUser) {
@@ -91,14 +89,9 @@ async function showNextProfile(ctx, currentUserId) {
   });
 }
 
-// Показать следующего лайкнувшего (для просмотра лайков)
+// Показать следующего лайкнувшего (если используется)
 async function showNextLiker(ctx, userId) {
-  // Находим непросмотренные лайки в сторону этого пользователя
-  const like = await Like.findOne({ 
-    toUser: userId, 
-    notified: false 
-  }).sort({ createdAt: 1 }); // сначала старые
-
+  const like = await Like.findOne({ toUser: userId, notified: false }).sort({ createdAt: 1 });
   if (!like) {
     await ctx.reply('Больше нет анкет для просмотра.');
     return;
@@ -106,16 +99,12 @@ async function showNextLiker(ctx, userId) {
 
   const liker = await User.findOne({ telegramId: like.fromUser });
   if (!liker) {
-    // Странно, но удалим лайк
     await Like.deleteOne({ _id: like._id });
-    await showNextLiker(ctx, userId); // рекурсивно пробуем следующего
-    return;
+    return showNextLiker(ctx, userId);
   }
 
-  // Сохраняем в сессию ID текущего просматриваемого лайка
   ctx.session = { viewingLiker: like._id.toString() };
-
-  const caption = `${liker.name}, ${liker.age}\n\n${liker.description}`;
+  const caption = ` ${liker.name}, ${liker.age}\n\n${liker.description}`;
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
@@ -128,7 +117,7 @@ async function showNextLiker(ctx, userId) {
   });
 }
 
-// ---------- Главное меню (клавиатура) ----------
+// Главное меню
 function mainMenu(user) {
   if (!user) {
     return Markup.keyboard([['📝 Создать анкету']]).resize();
@@ -146,13 +135,13 @@ function mainMenu(user) {
   }
 }
 
-// ---------- Команда /start ----------
+// Команда /start
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
   if (!user) {
     ctx.session = { step: 'name' };
-    await ctx.reply('Привет! Давай создадим твою анкету.\nКак тебя зовут?');
+    await ctx.reply('Привет! Давай найдем тебе сладкую омежку?).\nКак тебя зовут?');
   } else {
     await ctx.reply('Ты уже зарегистрирован. Что хочешь сделать?',
       Markup.inlineKeyboard([
@@ -162,28 +151,23 @@ bot.start(async (ctx) => {
   }
 });
 
-// ---------- Обработка всех текстовых сообщений ----------
+// Обработка текста
 bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
   const text = ctx.message.text;
 
-  // Регистрация
   if (ctx.session && ctx.session.step) {
     await handleRegistration(ctx, userId, text);
     return;
   }
-
-  // Редактирование (ввод описания)
   if (ctx.session && ctx.session.editStep === 'editDescription') {
     await handleEdit(ctx, userId, text);
     return;
   }
-
-  // Обычное меню (текстовые кнопки)
   await handleMenu(ctx, userId, text);
 });
 
-// ---------- Регистрация (по шагам) ----------
+// Регистрация
 async function handleRegistration(ctx, userId, text) {
   const step = ctx.session.step;
   try {
@@ -202,13 +186,13 @@ async function handleRegistration(ctx, userId, text) {
         ctx.session.age = age;
         ctx.session.step = 'gender';
         await ctx.reply('Твой пол?', Markup.keyboard([
-          ['Парень', 'Девушка',]
-        ]).oneTime().resize());
+          ['Я парень', 'Я девушка,`]
+            ]).oneTime().resize());
         break;
       case 'gender':
         let gender = '';
-        if (text === 'Парень') gender = 'male';
-        else if (text === 'Девушка') gender = 'female';
+        if (text === 'Я парень') gender = 'male';
+        else if (text === 'Я девушка') gender = 'female';
         else gender = 'other';
         ctx.session.gender = gender;
         ctx.session.step = 'lookingFor';
@@ -223,7 +207,7 @@ async function handleRegistration(ctx, userId, text) {
         else lookingFor = 'all';
         ctx.session.lookingFor = lookingFor;
         ctx.session.step = 'description';
-        await ctx.reply('Напиши немного о себе (Какой запах омежки предпочитаешь?)).');
+        await ctx.reply('Напиши немного о себе (С каким запахом омежку будем искать?)).');
         break;
       case 'description':
         ctx.session.description = text;
@@ -241,12 +225,12 @@ async function handleRegistration(ctx, userId, text) {
   }
 }
 
-// ---------- Обработка фото (регистрация и редактирование) ----------
+// Обработка фото
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
   const photos = ctx.message.photo;
   const fileId = photos[photos.length - 1].file_id;
-  // Редактирование фото
+
   if (ctx.session && ctx.session.editStep === 'editPhoto') {
     try {
       await updateUserField(userId, 'photoFileId', fileId);
@@ -260,8 +244,6 @@ bot.on('photo', async (ctx) => {
     }
     return;
   }
-
-  // Регистрация (завершение)
   if (ctx.session && ctx.session.step === 'photo') {
     try {
       const userData = {
@@ -295,8 +277,7 @@ bot.on('photo', async (ctx) => {
   await ctx.reply('Сейчас не нужно фото. Используй меню.');
 });
 
-// ---------- Обработка инлайн-кнопок ----------
-// Старт: создание новой анкеты
+// Обработчики инлайн-кнопок
 bot.action('start_new', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -308,7 +289,6 @@ bot.action('start_new', async (ctx) => {
   await ctx.reply('Давай создадим новую анкету.\nКак тебя зовут?');
 });
 
-// Старт: продолжение со старой анкетой
 bot.action('start_old', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -317,7 +297,6 @@ bot.action('start_old', async (ctx) => {
   await ctx.reply('С возвращением!', mainMenu(user));
 });
 
-// Подтверждение после регистрации: "Да"
 bot.action('confirm_ok', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -325,7 +304,6 @@ bot.action('confirm_ok', async (ctx) => {
   await ctx.reply('Отлично!', mainMenu(user));
 });
 
-// Подтверждение после регистрации: "Редактировать"
 bot.action('confirm_edit', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -338,7 +316,6 @@ bot.action('confirm_edit', async (ctx) => {
     ]));
 });
 
-// Редактирование: изменить фото
 bot.action('edit_photo', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -346,7 +323,6 @@ bot.action('edit_photo', async (ctx) => {
   await ctx.reply('Отправь новое фото.');
 });
 
-// Редактирование: изменить описание
 bot.action('edit_description', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -354,7 +330,6 @@ bot.action('edit_description', async (ctx) => {
   await ctx.reply('Напиши новое описание.');
 });
 
-// Редактирование: заполнить анкету заново
 bot.action('edit_restart', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -364,7 +339,6 @@ bot.action('edit_restart', async (ctx) => {
   await ctx.reply('Давай создадим анкету заново.\nКак тебя зовут?');
 });
 
-// Редактирование: отмена
 bot.action('edit_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -372,38 +346,25 @@ bot.action('edit_cancel', async (ctx) => {
   const user = await getUser(ctx.from.id);
   await ctx.reply('Редактирование отменено.', mainMenu(user));
 });
-// Лайк (в просмотре анкет)
+
 bot.action('like', async (ctx) => {
   await ctx.answerCbQuery();
   const fromUserId = ctx.from.id;
   const toUserId = ctx.session?.viewing;
-
   if (!toUserId) {
-    await ctx.reply('Ошибка: не выбран пользователь. Начни поиск заново.');
+    await ctx.reply('Ошибка: не выбран пользователь.');
     return;
   }
-
   try {
     await Like.create({ fromUser: fromUserId, toUser: toUserId });
-
     const mutual = await Like.findOne({ fromUser: toUserId, toUser: fromUserId });
-
     if (mutual) {
       await Match.create({ users: [fromUserId, toUserId] });
       await ctx.telegram.sendMessage(fromUserId, '🎉 Взаимная симпатия!');
       await ctx.telegram.sendMessage(toUserId, '🎉 Взаимная симпатия!');
-    } else {
+      } else {
       await ctx.reply('❤️ Лайк отправлен!');
-      // Если лайк поставили текущему пользователю (т.е. toUserId === ctx.from.id?) – но здесь fromUserId это текущий, toUserId другой.
-      // Проверим, нужно ли отправить уведомление тому, кого лайкнули.
-      // Это будет в обработчике лайка от другого пользователя, а здесь мы отправили лайк другому, значит уведомление получит другой.
-      // Мы должны уведомить toUserId о новом лайке, если это не взаимность.
-      // Для этого нужно отправить сообщение пользователю toUserId.
-      // Но здесь мы не можем просто так отправить, потому что это может быть асинхронно.
-      // Лучше в момент создания лайка проверить, если это не взаимность и лайк поставили не себе, то отправить уведомление получателю.
-      // Перенесём логику уведомления в отдельную функцию и вызовем после создания лайка, если не взаимность.
     }
-
     await showNextProfile(ctx, fromUserId);
   } catch (error) {
     if (error.code === 11000) {
@@ -416,7 +377,6 @@ bot.action('like', async (ctx) => {
   }
 });
 
-// Дизлайк (в просмотре анкет)
 bot.action('dislike', async (ctx) => {
   await ctx.answerCbQuery();
   const fromUserId = ctx.from.id;
@@ -424,10 +384,9 @@ bot.action('dislike', async (ctx) => {
   await showNextProfile(ctx, fromUserId);
 });
 
-// Назад (выход из просмотра анкет)
 bot.action('back', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.deleteMessage(); // удаляем анкету
+  await ctx.deleteMessage();
   const userId = ctx.from.id;
   await ctx.reply('Выбери действие:\n1. Моя анкета\n2. Продолжить\n3. Не искать',
     Markup.inlineKeyboard([
@@ -437,7 +396,6 @@ bot.action('back', async (ctx) => {
     ]));
 });
 
-// Назад -> Моя анкета
 bot.action('back_myprofile', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -453,7 +411,6 @@ bot.action('back_myprofile', async (ctx) => {
     ]));
 });
 
-// Назад -> Продолжить
 bot.action('back_continue', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -461,7 +418,6 @@ bot.action('back_continue', async (ctx) => {
   await showNextProfile(ctx, userId);
 });
 
-// Назад -> Не искать (скрыть анкету)
 bot.action('back_deactivate', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -471,7 +427,6 @@ bot.action('back_deactivate', async (ctx) => {
   await ctx.reply('Твоя анкета скрыта. Чтобы снова начать поиск, нажми "▶️ Начать поиск" в меню.', mainMenu(user));
 });
 
-// Вернуться в главное меню
 bot.action('back_to_menu', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -479,106 +434,8 @@ bot.action('back_to_menu', async (ctx) => {
   const user = await getUser(userId);
   await ctx.reply('Главное меню:', mainMenu(user));
 });
-// ---------- Обработка уведомлений о лайках ----------
-// Функция для отправки уведомления о новом лайке
-async function sendLikeNotification(toUserId, fromUserId) {
-  const toUser = await getUser(toUserId);
-  if (!toUser) return;
-  const fromUser = await getUser(fromUserId);
-  if (!fromUser) return;
 
-  // Проверяем, есть ли непросмотренные лайки у этого пользователя
-  const count = await Like.countDocuments({ toUser: toUserId, notified: false });
-  const text = count > 1 
-    ? `✨ У тебя ${count} новых лайков! Посмотрим?`
-    : `✨ Кому-то понравилась твоя анкета. Посмотрим?;`
-
-  await bot.telegram.sendMessage(toUserId, text, 
-    Markup.inlineKeyboard([
-      [Markup.button.callback('Да', 'view_likers'), Markup.button.callback('Нет', 'skip_likers')]
-    ]));
-}
-
-// Обработчик "Да" на уведомление о лайках
-bot.action('view_likers', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.deleteMessage(); // удаляем уведомление
-  const userId = ctx.from.id;
-  await showNextLiker(ctx, userId);
-});
-
-// Обработчик "Нет" на уведомление
-bot.action('skip_likers', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.deleteMessage();
-  // Ничего не делаем, просто закрываем
-});
-
-// Обработчики для просмотра лайков
-bot.action('like_liker', async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = ctx.from.id;
-  const likeId = ctx.session?.viewingLiker;
-  if (!likeId) {
-    await ctx.reply('Ошибка. Попробуй снова.');
-    return;
-  }
-
-  const like = await Like.findById(likeId);
-  if (!like) {
-    await ctx.reply('Этот лайк уже не существует.');
-    await showNextLiker(ctx, userId);
-    return;
-  }
-
-  const fromUserId = like.fromUser;
-  const toUserId = like.toUser;
-
-  // Удаляем лайк, так как мы на него ответили (теперь взаимность)
-  await Like.deleteOne({ _id: likeId });
-
-  // Проверяем взаимность
-  const mutual = await Like.findOne({ fromUser: toUserId, toUser: fromUserId });
-  if (mutual) {
-    await Match.create({ users: [fromUserId, toUserId] });
-    await ctx.telegram.sendMessage(fromUserId, '🎉 Взаимная симпатия!');
-    await ctx.telegram.sendMessage(toUserId, '🎉 Взаимная симпатия!');
-  } else {
-    // Если ещё нет взаимного лайка, создаём его? Нет, мы уже лайкнули в ответ, значит нужно создать лайк от текущего к лайкнувшему.
-    // Но мы уже удалили исходный лайк. Создадим новый лайк от текущего к лайкнувшему.
-    await Like.create({ fromUser: toUserId, toUser: fromUserId, notified: false });
-    await ctx.reply('❤️ Лайк отправлен!');
-    // Также нужно уведомить другую сторону о новом лайке? Если она ещё не видела? Но мы не знаем. Можно не уведомлять, т.к. она уже получила уведомление ранее.
-  }
-
-  // Показываем следующего лайкера
-  await showNextLiker(ctx, userId);
-});
-
-bot.action('dislike_liker', async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = ctx.from.id;
-  const likeId = ctx.session?.viewingLiker;
-  if (!likeId) {
-    await ctx.reply('Ошибка. Попробуй снова.');
-    return;
-  }
-
-  // Помечаем лайк как просмотренный (notified = true), чтобы больше не показывать
-  await Like.updateOne({ _id: likeId }, { $set: { notified: true } });
-  await ctx.reply('👎 Пропускаем...');
-  await showNextLiker(ctx, userId);
-});
-
-bot.action('back_liker', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  const user = await getUser(userId);
-  await ctx.reply('Главное меню:', mainMenu(user));
-});
-
-// ---------- Обработка редактирования (ввод описания) ----------
+// Обработка редактирования описания
 async function handleEdit(ctx, userId, text) {
   try {
     await updateUserField(userId, 'description', text);
@@ -591,7 +448,8 @@ async function handleEdit(ctx, userId, text) {
     ctx.session = null;
   }
 }
-// ---------- Обработка обычного меню (текстовые кнопки) ----------
+
+// Обработка меню
 async function handleMenu(ctx, userId, text) {
   const user = await getUser(userId);
   if (!user) {
@@ -631,7 +489,7 @@ async function handleMenu(ctx, userId, text) {
   }
 }
 
-// ---------- Запуск бота ----------
+// Запуск бота
 bot.launch();
 console.log('🤖 Бот запущен...');
 
