@@ -12,7 +12,7 @@ const Match = require('./models/Match');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // Подключаем сессии (хранятся в файле sessions.json)
-bot.use(require('telegraf-session-local')({ database: 'sessions.json' }).middleware());
+bot.use(new (require('telegraf-session-local'))({ database: 'sessions.json' }).middleware());
 
 // Подключаемся к базе данных MongoDB
 mongoose.connect(process.env.MONGODB_URI)
