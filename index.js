@@ -366,8 +366,10 @@ bot.action('edit_cancel', async (ctx) => {
 // ============================================
 // ЛАЙК (основной)
 // ============================================
+// ЛАЙК (основной)
+// ============================================
 bot.action('like', async (ctx) => {
-  console.log('back action started');
+  console.log('like action started');
   await ctx.answerCbQuery();
   const fromId = ctx.from.id;
   const toId = ctx.session?.viewing;
@@ -379,21 +381,40 @@ bot.action('like', async (ctx) => {
 
     if (mutual) {
       await Match.create({ users: [fromId, toId] });
-      const [fromData, toData] = await Promise.all([getUser(fromId), getUser(toId)]);
+      
+      // Получаем данные обоих пользователей
+      const fromData = await getUser(fromId);
+      const toData = await getUser(toId);
 
-      const sendProfileAndContact = async (uid, other) => {
-        const cap = `${other.name}, ${other.age} г., г. ${other.city}\n\n${other.description}`;
-        await ctx.telegram.sendPhoto(uid, other.photoFileId, { caption: cap });
-        const contact = `👤 Контакт: ${other.name}` + (other.username ? `\nЮзернейм: @${other.username}\nПерейти: t.me/${other.username}` : '');
-        await ctx.telegram.sendMessage(uid, contact);
+      // Функция для отправки анкеты и ссылки на имя
+      const sendProfileAndLink = async (uid, other) => {
+        // 1. Отправляем анкету
+        const caption = `${other.name}, ${other.age} г., г. ${other.city}\n\n${other.description}`;
+        await ctx.telegram.sendPhoto(uid, other.photoFileId, { caption });
+        
+        // 2. Формируем имя-ссылку
+        let nameLink;
+        if (other.username) {
+          nameLink = `[${other.name}](t.me/${other.username})`;
+        } else {
+          nameLink = `[${other.name}](tg://user?id=${other.telegramId})`;
+        }
+        
+        // 3. Отправляем сообщение с именем-ссылкой
+        const text = `Отлично! Хорошо проведите время. Начинай общаться с ${nameLink}`;
+        await ctx.telegram.sendMessage(uid, text, { parse_mode: 'Markdown' });
       };
 
-      await sendProfileAndContact(fromId, toData);
-      await sendProfileAndContact(toId, fromData);
+      // Отправляем обоим
+      await sendProfileAndLink(fromId, toData);
+      await sendProfileAndLink(toId, fromData);
     } else {
+      // Если не взаимно – просто лайк
       await ctx.reply('❤️ Лайк отправлен!');
       await sendLikeNotification(toId, fromId);
     }
+
+    // Показываем следующую анкету (в любом случае, но после обработки)
     await showNextProfile(ctx, fromId);
   } catch (e) {
     if (e.code === 11000) await ctx.reply('Вы уже взаимодействовали с этим человеком.');
