@@ -227,11 +227,10 @@ function mainMenu(user) {
   }
 }
 
-// ---------- Команды администратора ----------
-const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
-const ADMIN_IDS = [5729593990]; // сюда можно добавить ID других администраторов
+// ---------- Команды администратора (ДОЛЖНЫ БЫТЬ ЗДЕСЬ) ----------
+const OWNER_ID = 5729593990;
+const ADMIN_IDS = [5729593990];
 
-// Статистика для владельца и админов
 bot.command('stats', async (ctx) => {
     console.log('stats command called by user', ctx.from.id);
     const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
@@ -246,7 +245,6 @@ bot.command('stats', async (ctx) => {
     await ctx.reply(msg);
 });
 
-// Рассылка (только для владельца)
 bot.command('broadcast', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return ctx.reply('Только для владельца.');
 
