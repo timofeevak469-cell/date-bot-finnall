@@ -73,13 +73,20 @@ const showNextProfile = async (ctx, userId) => {
   const user = await getUser(userId);
   if (!user) return ctx.reply('Сначала создай анкету через /start');
 
-  // Кого уже лайкнул/дизлайкнул
-  const interacted = await Like.find({ fromUser: userId }).select('toUser');
-  const excludedIds = interacted.map(i => i.toUser);
+  // Получаем ВСЕХ, кого пользователь уже лайкнул или дизлайкнул (без ограничений по времени)
+  const interactions = await Like.find({ fromUser: userId }).select('toUser');
+  const excludedIds = interactions.map(i => i.toUser);
+  
+  console.log('Исключаем ID:', excludedIds); // для отладки
 
   const filter = {
-    telegramId: { $ne: userId, $nin: excludedIds },
-    gender: user.lookingFor === 'all' ? { $in: ['male', 'female', 'other'] } : user.lookingFor,
+    telegramId: { 
+      $ne: userId,               // не себя
+      $nin: excludedIds           // исключаем всех, с кем уже взаимодействовал
+    },
+    gender: user.lookingFor === 'all' 
+      ? { $in: ['male', 'female', 'other'] } 
+      : user.lookingFor,
     active: true
   };
 
@@ -99,7 +106,6 @@ const showNextProfile = async (ctx, userId) => {
     ])
   });
 };
-
 // ============================================
 // ПРОСМОТР ЛАЙКОВ
 // ============================================
