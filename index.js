@@ -304,6 +304,7 @@ bot.on('photo', async (ctx) => {
 // ИНЛАЙН-КНОПКИ
 // ============================================
 bot.action('confirm_ok', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   const user = await getUser(ctx.from.id);
@@ -311,6 +312,7 @@ bot.action('confirm_ok', async (ctx) => {
 });
 
 bot.action('confirm_edit', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await ctx.reply('Выбери действие:', Markup.inlineKeyboard([
@@ -322,6 +324,7 @@ bot.action('confirm_edit', async (ctx) => {
 });
 
 bot.action('edit_photo', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   ctx.session = { editStep: 'editPhoto' };
@@ -329,6 +332,7 @@ bot.action('edit_photo', async (ctx) => {
 });
 
 bot.action('edit_description', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   ctx.session = { editStep: 'editDescription' };
@@ -336,6 +340,7 @@ bot.action('edit_description', async (ctx) => {
 });
 
 bot.action('edit_restart', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await User.deleteOne({ telegramId: ctx.from.id });
@@ -344,6 +349,7 @@ bot.action('edit_restart', async (ctx) => {
 });
 
 bot.action('edit_cancel', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   ctx.session = null;
@@ -355,6 +361,7 @@ bot.action('edit_cancel', async (ctx) => {
 // ЛАЙК (основной)
 // ============================================
 bot.action('like', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   const fromId = ctx.from.id;
   const toId = ctx.session?.viewing;
@@ -393,6 +400,7 @@ bot.action('like', async (ctx) => {
 // ДИЗЛАЙК
 // ============================================
 bot.action('dislike', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   const fromId = ctx.from.id;
   const toId = ctx.session?.viewing;
@@ -409,6 +417,7 @@ bot.action('dislike', async (ctx) => {
 // НАЗАД ИЗ ПРОСМОТРА
 // ============================================
 bot.action('back', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await ctx.reply('Выбери действие:', Markup.inlineKeyboard([
@@ -419,6 +428,7 @@ bot.action('back', async (ctx) => {
 });
 
 bot.action('back_myprofile', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   const user = await getUser(ctx.from.id);
@@ -432,12 +442,14 @@ bot.action('back_myprofile', async (ctx) => {
 });
 
 bot.action('back_continue', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await showNextProfile(ctx, ctx.from.id);
 });
 
 bot.action('back_deactivate', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await updateField(ctx.from.id, 'active', false);
@@ -446,6 +458,7 @@ bot.action('back_deactivate', async (ctx) => {
 });
 
 bot.action('back_to_menu', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   const user = await getUser(ctx.from.id);
@@ -456,17 +469,20 @@ bot.action('back_to_menu', async (ctx) => {
 // ПРОСМОТР ЛАЙКОВ – КНОПКИ
 // ============================================
 bot.action('view_likers', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
   await showNextLiker(ctx, ctx.from.id);
 });
 
 bot.action('skip_likers', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
 });
 
 bot.action('like_liker', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   const { id } = ctx.from;
   const likerId = ctx.session?.currentLikerId;
@@ -493,6 +509,7 @@ bot.action('like_liker', async (ctx) => {
 });
 
 bot.action('dislike_liker', async (ctx) => {
+  console.log('back action started');
   await ctx.answerCbQuery();
   ctx.session.currentIdx++;
   await showNextNormal(ctx, ctx.from.id);
