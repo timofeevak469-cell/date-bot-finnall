@@ -15,7 +15,6 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // Подключаем сессии в MongoDB
 //const session = new MongoSession({ url: process.env.MONGODB_URI });
 //bot.use(session.middleware());
-const LocalSession = require('telegraf-session-local');
 bot.use(new LocalSession({ database: 'sessions.json' }).middleware());
 // Подключаемся к базе данных
 mongoose.connect(process.env.MONGODB_URI)
