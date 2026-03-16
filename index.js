@@ -615,16 +615,16 @@ const ADMIN_IDS = []; // сюда можно добавить ID других а
 
 // Статистика для владельца и админов
 bot.command('stats', async (ctx) => {
-  const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
-  if (!isAdmin) return ctx.reply('Недоступно.');
+    const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
+    if (!isAdmin) return ctx.reply('Недоступно.');
 
-  const totalUsers = await User.countDocuments({});
-  const activeUsers = await User.countDocuments({ active: true });
-  const totalLikes = await Like.countDocuments({});
-  const totalMatches = await Match.countDocuments({});
+    const totalUsers = await User.countDocuments({});
+    const activeUsers = await User.countDocuments({ active: true });
+    const totalLikes = await Like.countDocuments({});
+    const totalMatches = await Match.countDocuments({});
 
-  const msg = `📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches}`;
-  await ctx.reply(msg);
+    const msg = 📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches};
+    await ctx.reply(msg);
 });
 
 // Рассылка (только для владельца)
