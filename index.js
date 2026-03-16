@@ -63,7 +63,7 @@ async function showMyProfile(ctx, user) {
   await ctx.replyWithPhoto(user.photoFileId, { caption });
 }
 
-// ---------- Показать следующую анкету ----------
+// Показать следующую анкету
 async function showNextProfile(ctx, currentUserId) {
   const currentUser = await getUser(currentUserId);
   if (!currentUser) {
@@ -79,10 +79,12 @@ async function showNextProfile(ctx, currentUserId) {
     active: true
   };
 
- // Получаем всех, кого пользователь уже лайкнул или дизлайкнул
-const interactedUsers = await Like.find({ fromUser: currentUserId }).select('toUser');
-const interactedIds = interactedUsers.map(l => l.toUser);
-filter.telegramId = { $nin: [currentUserId, ...interactedIds] };
+  // Получаем ВСЕХ пользователей, с которыми уже было взаимодействие (лайк или дизлайк)
+  const interactedUsers = await Like.find({ fromUser: currentUserId }).select('toUser');
+  const interactedIds = interactedUsers.map(l => l.toUser);
+  
+  // Исключаем их из показа
+  filter.telegramId = { $nin: [currentUserId, ...interactedIds] };
 
   const candidate = await User.findOne(filter);
   if (!candidate) {
@@ -671,12 +673,31 @@ bot.action('like_liker', async (ctx) => {
   await showNextNormalLiker(ctx, userId);
 });
 
-bot.action('dislike_liker', async (ctx) => {
+// Дизлайк (основной просмотр)
+bot.action('dislike', async (ctx) => {
   await ctx.answerCbQuery();
-  const userId = ctx.from.id;
-  const index = ctx.session.currentNormalIndex + 1;
-  ctx.session.currentNormalIndex = index;
-  await showNextNormalLiker(ctx, userId);
+  const fromUserId = ctx.from.id;
+  const toUserId = ctx.session?.viewing;
+
+  if (!toUserId) {
+    await showNextProfile(ctx, fromUserId);
+    return;
+  }
+
+  try {
+    // Сохраняем дизлайк
+    await Like.create({ fromUser: fromUserId, toUser: toUserId, type: 'dislike' });
+    await ctx.reply('👎 Пропускаем...');
+  } catch (error) {
+    // Если уже есть запись (лайк или дизлайк), просто продолжаем
+    if (error.code === 11000) {
+      await ctx.reply('👎 Пропускаем...');
+    } else {
+      console.error(error);
+    }
+  }
+
+  await showNextProfile(ctx, fromUserId);
 });
 
 // ---------- Обработка редактирования ----------
