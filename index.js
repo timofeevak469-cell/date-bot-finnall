@@ -227,6 +227,46 @@ function mainMenu(user) {
   }
 }
 
+// ---------- Команды администратора ----------
+const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
+const ADMIN_IDS = []; // сюда можно добавить ID других администраторов
+
+// Статистика для владельца и админов
+bot.command('stats', async (ctx) => {
+    const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
+    if (!isAdmin) return ctx.reply('Недоступно.');
+
+    const totalUsers = await User.countDocuments({});
+    const activeUsers = await User.countDocuments({ active: true });
+    const totalLikes = await Like.countDocuments({});
+    const totalMatches = await Match.countDocuments({});
+
+    const msg = 📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches};
+    await ctx.reply(msg);
+});
+
+// Рассылка (только для владельца)
+bot.command('broadcast', async (ctx) => {
+  if (ctx.from.id !== OWNER_ID) return ctx.reply('Только для владельца.');
+
+  const text = ctx.message.text.replace('/broadcast', '').trim();
+  if (!text) return ctx.reply('Использование: /broadcast <текст>');
+
+  const users = await User.find({}, 'telegramId');
+  let success = 0, fail = 0;
+  await ctx.reply('⏳ Начинаю рассылку...');
+  for (const user of users) {
+    try {
+      await ctx.telegram.sendMessage(user.telegramId, text);
+      success++;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } catch (e) {
+      fail++;
+    }
+  }
+  await ctx.reply(`✅ Рассылка завершена.\nУспешно: ${success}\nНе удалось: ${fail}`);
+});
+
 // ---------- Команда /start ----------
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
@@ -607,46 +647,6 @@ bot.action('dislike_liker', async (ctx) => {
   const index = ctx.session.currentNormalIndex + 1;
   ctx.session.currentNormalIndex = index;
   await showNextNormalLiker(ctx, userId);
-});
-
-// ---------- Команды администратора ----------
-const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
-const ADMIN_IDS = []; // сюда можно добавить ID других администраторов
-
-// Статистика для владельца и админов
-bot.command('stats', async (ctx) => {
-    const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
-    if (!isAdmin) return ctx.reply('Недоступно.');
-
-    const totalUsers = await User.countDocuments({});
-    const activeUsers = await User.countDocuments({ active: true });
-    const totalLikes = await Like.countDocuments({});
-    const totalMatches = await Match.countDocuments({});
-
-    const msg = 📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches};
-    await ctx.reply(msg);
-});
-
-// Рассылка (только для владельца)
-bot.command('broadcast', async (ctx) => {
-  if (ctx.from.id !== OWNER_ID) return ctx.reply('Только для владельца.');
-
-  const text = ctx.message.text.replace('/broadcast', '').trim();
-  if (!text) return ctx.reply('Использование: /broadcast <текст>');
-
-  const users = await User.find({}, 'telegramId');
-  let success = 0, fail = 0;
-  await ctx.reply('⏳ Начинаю рассылку...');
-  for (const user of users) {
-    try {
-      await ctx.telegram.sendMessage(user.telegramId, text);
-      success++;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    } catch (e) {
-      fail++;
-    }
-  }
-  await ctx.reply(`✅ Рассылка завершена.\nУспешно: ${success}\nНе удалось: ${fail}`);
 });
 
 // ---------- Обработка редактирования (ввод описания) ----------
