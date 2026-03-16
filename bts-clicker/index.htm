@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTS Clicker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #game {
+            max-width: 400px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 30px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #B185A7, #C79BB5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        h2 {
+            text-align: center;
+            font-size: 20px;
+            margin: 15px 0;
+            color: #C79BB5;
+        }
+        /* Экраны */
+        .screen {
+            display: none;
+        }
+        .screen.active {
+            display: block;
+        }
+        /* Сетка персонажей для выбора */
+        .characters-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .character-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .character-card:hover {
+            transform: scale(1.05);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .character-card.selected {
+            border-color: #C79BB5;
+            background: rgba(199, 155, 181, 0.2);
+        }
+        .character-thumb {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 10px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            background-color: #C79BB5;
+        }
+        .character-name {
+            font-weight: bold;
+            color: #fff;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #B185A7, #C79BB5);
+            border: none;
+            border-radius: 15px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.3s;
+            margin-top: 20px;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-top: 0;
+            width: auto;
+            padding: 10px 20px;
+        }
+        .small-btn {
+            background: rgba(199, 155, 181, 0.3);
+            border: 1px solid #C79BB5;
+            padding: 8px 15px;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            width: 100%;
+        }
+        /* Игровой экран */
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .balance {
+            font-size: 24px;
+            font-weight: bold;
+            color: #C79BB5;
+        }
+        .energy-bar {
+            background: rgba(255, 255, 255, 0.1);
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .energy-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #B185A7, #C79BB5);
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+        .energy-text {
+            text-align: right;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 20px;
+        }
+        /* Контейнер для персонажа с фоном */
+        .scene-container {
+            position: relative;
+            min-height: 280px;
+            margin: 20px 0;
+            border-radius: 20px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #2a1e3c, #1a1a2e);
+            transition: background 0.3s ease;
+        }
+        /* Фон (обои) */
+        .background-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            opacity: 0.3;
+            z-index: 1;
+        }
+        /* Декоративные элементы (звёзды, растения и т.д.) */
+        .decor-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            z-index: 2;
+            pointer-events: none;
+        }
+        /* Лежанка (под персонажем) */
+        .bed-layer {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 180px;
+            height: 60px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: bottom center;
+            z-index: 3;
+            pointer-events: none;
+        }
+        /* Персонаж */
+        .character-stand {
+            position: relative;
+            z-index: 4;
+            text-align: center;
+            padding-top: 30px;
+        }
+        .character-full {
+            width: 150px;
+            height: 150px;
+            margin: 0 auto;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: relative;
+            z-index: 5;
+        }
+        .character-name-big {
+            font-size: 24px;
+            font-weight: bold;
+            color: #C79BB5;
+            margin-top: 10px;
+            position: relative;
+            z-index: 5;
+        }
+        .equipped-items {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+            min-height: 30px;
+            position: relative;
+            z-index: 5;
+        }
+        .equipped-item {
+            font-size: 24px;
+            filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));
+        }
+        /* Круг для тапов */
+        .tap-circle-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px 0;
+        }
+        .tap-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #B185A7, #C79BB5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+            box-shadow: 0 8px 32px rgba(199, 155, 181, 0.5);
+            margin-bottom: 10px;
+        }
+        .tap-circle:active {
+            transform: scale(0.9);
+        }
+        .tap-circle span {
+            font-size: 40px;
+        }
+        .tap-info {
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
+        }
+        .tap-info span {
+            color: #C79BB5;
+            font-weight: bold;
+        }
+        /* Статистика */
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        /* Навигация */
+        .nav-bar {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .nav-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 10px;
+            transition: background 0.3s;
+        }
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        /* Категории */
+        .categories {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .category-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 8px 15px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .category-btn.active {
+            background: #C79BB5;
+            border-color: #C79BB5;
+        }
+        /* Сетка магазина */
+        .shop-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .shop-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+        }
+        .shop-item.owned {
+            border: 2px solid #C79BB5;
+            background: rgba(199, 155, 181, 0.1);
+        }
+        .shop-item-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+        .shop-item-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .shop-item-price {
+            color: #C79BB5;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        /* Панели */
+        .panel {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .boosts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .boost-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+        }
+        .boost-price {
+            font-size: 18px;
+            font-weight: bold;
+            color: #C79BB5;
+            margin: 10px 0;
+        }
+        .ref-link {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 10px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <h1>✨ BTS Clicker ✨</h1>
+        
+        <!-- Экран выбора персонажа -->
+        <div id="character-select" class="screen active">
+            <div class="characters-grid">
+                <div class="character-card" data-character="rm">
+                    <div class="character-thumb" style="background-image: url('rm.png');"></div>
+                    <div class="character-name">RM</div>
+                </div>
+                <div class="character-card" data-character="jin">
+                    <div class="character-thumb" style="background-image: url('jin.png');"></div>
+                    <div class="character-name">Jin</div>
+                </div>
+                <div class="character-card" data-character="suga">
+                    <div class="character-thumb" style="background-image: url('suga.png');"></div>
+                    <div class="character-name">SUGA</div>
+                </div>
+                <div class="character-card" data-character="jhope">
+                    <div class="character-thumb" style="background-image: url('jhope.png');"></div>
+                    <div class="character-name">J-Hope</div>
+                </div>
+                <div class="character-card" data-character="jimin">
+                    <div class="character-thumb" style="background-image: url('jimin.png');"></div>
+                    <div class="character-name">Jimin</div>
+                </div>
+                <div class="character-card" data-character="v">
+                    <div class="character-thumb" style="background-image: url('v.png');"></div>
+                    <div class="character-name">V</div>
+                </div>
+                <div class="character-card" data-character="jungkook">
+                    <div class="character-thumb" style="background-image: url('jungkook.png');"></div>
+                    <div class="character-name">Jungkook</div>
+                </div>
+            </div>
+            <button class="btn" id="start-game" disabled>Начать игру</button>
+        </div>
+
+        <!-- Основной игровой экран -->
+        <div id="game-screen" class="screen">
+            <div class="game-header">
+                <button class="btn back-btn" id="back-to-menu">←</button>
+                <div class="balance" id="balance">0</div>
+            </div>
+            
+            <div class="energy-bar">
+                <div class="energy-fill" id="energy-fill" style="width: 100%"></div>
+            </div>
+            <div class="energy-text" id="energy-text">100/100</div>
+
+            <!-- Сцена с персонажем, лежанкой и декором -->
+            <div class="scene-container" id="scene-container">
+                <!-- Фоновый слой (обои) -->
+                <div class="background-layer" id="background-layer"></div>
+                <!-- Декоративный слой (предметы вокруг) -->
+                <div class="decor-layer" id="decor-layer"></div>
+                <!-- Лежанка (под персонажем) -->
+                <div class="bed-layer" id="bed-layer"></div>
+                <!-- Персонаж -->
+                <div class="character-stand">
+                    <div class="character-full" id="character-full"></div>
+                    <div class="character-name-big" id="character-name-big"></div>
+                    <div class="equipped-items" id="equipped-items"></div>
+                </div>
+            </div>
+
+            <!-- Круг для тапов -->
+            <div class="tap-circle-container">
+                <div class="tap-circle" id="tap-button">
+                    <span>⏺️</span>
+                </div>
+                <div class="tap-info">
+                    Тапай сюда!<br>
+                    <span id="tap-power">1</span> монет за тап
+                </div>
+            </div>
+
+            <!-- Статистика -->
+            <div class="stats" id="stats">
+                <div>💰 Баланс: <span id="stat-balance">0</span></div>
+                <div>⚡ Энергия: <span id="stat-energy">100/100</span></div>
+                <div>📈 Доход в сек: <span id="stat-income">0</span></div>
+                <div>👥 Рефералов: <span id="stat-refs">0</span></div>
+            </div>
+
+            <!-- Навигация -->
+            <div class="nav-bar">
+                <button class="nav-btn" id="nav-main" title="Главная">🏠</button>
+                <button class="nav-btn" id="nav-shop" title="Магазин">🛍️</button>
+                <button class="nav-btn" id="nav-boosts" title="Улучшения">⚡</button>
+                <button class="nav-btn" id="nav-tasks" title="Задания">📋</button>
+                <button class="nav-btn" id="nav-ref" title="Рефералы">👥</button>
+            </div>
+
+            <!-- Панель магазина (теперь с новыми категориями) -->
+            <div id="shop-panel" style="display: none;" class="panel">
+                <h2>🛍️ Магазин</h2>
+                <div class="categories">
+                    <button class="category-btn active" data-category="hats">🎩 Шляпы</button>
+                    <button class="category-btn" data-category="glasses">👓 Очки</button>
+                    <button class="category-btn" data-category="clothes">👕 Одежда</button>
+                    <button class="category-btn" data-category="accessories">✨ Аксессуары</button>
+                    <button class="category-btn" data-category="beds">🛏️ Лежанки</button>
+                    <button class="category-btn" data-category="decor">🎨 Декор</button>
+                </div>
+                <div id="shop-items" class="shop-grid"></div>
+                <button class="btn back-btn" id="back-from-shop">Назад</button>
+            </div>
+
+            <!-- Панель бустов -->
+            <div id="boosts-panel" style="display: none;" class="panel">
+                <h2>⚡ Улучшения</h2>
+                <div class="boosts-grid">
+                    <div class="boost-card">
+                        <div>💪 Сила тапа</div>
+                        <div class="boost-price" id="boost-tap-price">100</div>
+                        <button class="small-btn" id="buy-tap">Купить</button>
+                    </div>
+                    <div class="boost-card">
+                        <div>⚡ Макс. энергия</div>
+                        <div class="boost-price" id="boost-energy-price">200</div>
+                        <button class="small-btn" id="buy-energy">Купить</button>
+                    </div>
+                    <div class="boost-card">
+                        <div>⏱️ Регенерация</div>
+                        <div class="boost-price" id="boost-regen-price">300</div>
+                        <button class="small-btn" id="buy-regen">Купить</button>
+                    </div>
+                    <div class="boost-card">
+                        <div>📈 Пассивный доход</div>
+                        <div class="boost-price" id="boost-income-price">500</div>
+                        <button class="small-btn" id="buy-income">Купить</button>
+                    </div>
+                </div>
+                <button class="btn back-btn" id="back-from-boosts">Назад</button>
+            </div>
+
+            <!-- Панель заданий -->
+            <div id="tasks-panel" style="display: none;" class="panel">
+                <h2>📋 Задания</h2>
+                <div class="boosts-grid">
+                    <div class="boost-card">
+                        <div>🎯 100 тапов</div>
+                        <div class="boost-price" id="task1-progress">0/100</div>
+                        <button class="small-btn" id="task1-claim" disabled>Забрать 50</button>
+                    </div>
+                    <div class="boost-card">
+                        <div>📢 Подписаться на канал</div>
+                        <div class="boost-price">+100</div>
+                        <button class="small-btn" id="task2">Выполнить</button>
+                    </div>
+                </div>
+                <button class="btn back-btn" id="back-from-tasks">Назад</button>
+            </div>
+
+            <!-- Панель рефералов -->
+            <div id="ref-panel" style="display: none;" class="panel">
+                <h2>👥 Приглашай друзей</h2>
+                <div class="stats">
+                    <div>Приглашено: <span id="ref-count">0</span></div>
+                    <div>Заработано: <span id="ref-earned">0</span></div>
+                </div>
+                <p>Твоя ссылка:</p>
+                <div class="ref-link" id="ref-link">...</div>
+                <button class="btn" id="copy-ref">Копировать</button>
+                <button class="btn back-btn" id="back-from-ref">Назад</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        // Данные игры
+        let userData = {
+            character: null,
+            balance: 1000, // для тестов
+            maxEnergy: 100,
+            energy: 100,
+            tapPower: 1,
+            incomePerSec: 0,
+            boostLevels: { tap: 0, energy: 0, regen: 0, income: 0 },
+            tasks: { taps: 0 },
+            referrals: 0,
+            refEarned: 0,
+            inventory: {},
+            equipped: {},
+            // Новые поля для лежанки и декора
+            selectedBed: null,
+            selectedDecor: null
+        };
+
+        // Каталог предметов (добавлены лежанки и декор)
+        const shopItems = {
+            hats: [
+                { id: 'hat1', name: 'Бейсболка', price: 100, icon: '🧢', category: 'hats' },
+                { id: 'hat2', name: 'Шляпа', price: 200, icon: '🎩', category: 'hats' },
+                { id: 'hat3', name: 'Ободок', price: 300, icon: '🎀', category: 'hats' }
+            ],
+            glasses: [
+                { id: 'glass1', name: 'Солнцезащитные', price: 150, icon: '🕶️', category: 'glasses' },
+                { id: 'glass2', name: 'Обычные очки', price: 250, icon: '👓', category: 'glasses' }
+            ],
+            clothes: [
+                { id: 'cloth1', name: 'Футболка', price: 200, icon: '👕', category: 'clothes' },
+                { id: 'cloth2', name: 'Толстовка', price: 350, icon: '👚', category: 'clothes' },
+                { id: 'cloth3', name: 'Куртка', price: 500, icon: '🧥', category: 'clothes' }
+            ],
+            accessories: [
+                { id: 'acc1', name: 'Браслет', price: 120, icon: '📿', category: 'accessories' },
+                { id: 'acc2', name: 'Кольцо', price: 180, icon: '💍', category: 'accessories' },
+                { id: 'acc3', name: 'Часы', price: 400, icon: '⌚', category: 'accessories' }
+            ],
+            // Лежанки
+            beds: [
+                { id: 'bed1', name: 'Простой коврик', price: 200, icon: '🧶', category: 'beds', bgStyle: 'linear-gradient(45deg, #8B5A2B, #B87333)' },
+                { id: 'bed2', name: 'Мягкая подушка', price: 500, icon: '🛏️', category: 'beds', bgStyle: 'linear-gradient(45deg, #FFB6C1, #FF69B4)' },
+                { id: 'bed3', name: 'Королевский трон', price: 1000, icon: '👑', category: 'beds', bgStyle: 'linear-gradient(45deg, #FFD700, #FFA500)' }
+            ],
+            // Декор (предметы вокруг)
+            decor: [
+                { id: 'dec1', name: 'Звёздочки', price: 150, icon: '✨', category: 'decor', bgStyle: 'radial-gradient(circle, rgba(255,215,0,0.2) 1px, transparent 1px)' },
+                { id: 'dec2', name: 'Растения', price: 300, icon: '🌿', category: 'decor', bgStyle: 'linear-gradient(45deg, #90EE90, #228B22)' },
+                { id: 'dec3', name: 'Радуга', price: 600, icon: '🌈', category: 'decor', bgStyle: 'linear-gradient(45deg, #FF0000, #FF7F00, #FFFF00, #00FF00, #0000FF, #4B0082, #9400D3)' }
+            ]
+        };
+
+        // Элементы DOM
+        const screens = {
+            characterSelect: document.getElementById('character-select'),
+            game: document.getElementById('game-screen')
+        };
+        const gameElements = {
+            balance: document.getElementById('balance'),
+            energyFill: document.getElementById('energy-fill'),
+            energyText: document.getElementById('energy-text'),
+            characterFull: document.getElementById('character-full'),
+            characterNameBig: document.getElementById('character-name-big'),
+            tapButton: document.getElementById('tap-button'),
+            tapPower: document.getElementById('tap-power'),
+            statBalance: document.getElementById('stat-balance'),
+            statEnergy: document.getElementById('stat-energy'),
+            statIncome: document.getElementById('stat-income'),
+            statRefs: document.getElementById('stat-refs'),
+            equippedItems: document.getElementById('equipped-items'),
+            // Новые элементы для лежанки и декора
+            sceneContainer: document.getElementById('scene-container'),
+            backgroundLayer: document.getElementById('background-layer'),
+            decorLayer: document.getElementById('decor-layer'),
+            bedLayer: document.getElementById('bed-layer')
+        };
+        const startBtn = document.getElementById('start-game');
+        const backBtn = document.getElementById('back-to-menu');
+        const characterCards = document.querySelectorAll('.character-card');
+
+        // Выбор персонажа
+        characterCards.forEach(card => {
+            card.addEventListener('click', () => {
+                characterCards.forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                userData.character = card.dataset.character;
+                
+                // Инициализируем инвентарь для этого персонажа
+                if (!userData.inventory[userData.character]) {
+                    userData.inventory[userData.character] = [];
+                    userData.equipped[userData.character] = {};
+                }
+                
+                // Обновляем отображение персонажа
+                const bg = card.querySelector('.character-thumb').style.backgroundImage;
+                gameElements.characterFull.style.backgroundImage = bg;
+                gameElements.characterNameBig.textContent = card.querySelector('.character-name').textContent;
+                
+                updateEquippedDisplay();
+                updateScene();
+                startBtn.disabled = false;
+            });
+        });
+
+        // Начало игры
+        startBtn.addEventListener('click', () => {
+            screens.characterSelect.classList.remove('active');
+            screens.game.classList.add('active');
+            startIntervals();
+            updateUI();
+            renderShop();
+            updateScene();
+        });
+
+        // Возврат в меню выбора
+        backBtn.addEventListener('click', () => {
+            stopIntervals();
+            screens.game.classList.remove('active');
+            screens.characterSelect.classList.add('active');
+        });
+
+        // Тап по кругу
+        gameElements.tapButton.addEventListener('click', () => {
+            if (userData.energy <= 0) return;
+            userData.energy = Math.max(userData.energy - 1, 0);
+            userData.balance += userData.tapPower;
+            userData.tasks.taps++;
+            updateUI();
+
+            // Анимация круга
+            gameElements.tapButton.style.transform = 'scale(0.9)';
+            setTimeout(() => gameElements.tapButton.style.transform = 'scale(1)', 100);
+        });
+
+        // Навигация
+        document.getElementById('nav-main').addEventListener('click', showMainGame);
+        document.getElementById('nav-shop').addEventListener('click', () => showPanel('shop'));
+        document.getElementById('nav-boosts').addEventListener('click', () => showPanel('boosts'));
+        document.getElementById('nav-tasks').addEventListener('click', () => showPanel('tasks'));
+        document.getElementById('nav-ref').addEventListener('click', () => showPanel('ref'));
+
+        function showPanel(panel) {
+            document.querySelectorAll('#game-screen > div:not(.game-header):not(.nav-bar)').forEach(el => el.style.display = 'none');
+            document.getElementById(panel + '-panel').style.display = 'block';
+        }
+
+        function showMainGame() {
+            document.querySelectorAll('#game-screen > div:not(.game-header):not(.nav-bar)').forEach(el => {
+                if (el.id !== 'shop-panel' && el.id !== 'boosts-panel' && el.id !== 'tasks-panel' && el.id !== 'ref-panel') {
+                    el.style.display = '';
+                }
+            });
+        }
+
+        // Кнопки "Назад" из панелей
+        document.getElementById('back-from-shop').addEventListener('click', showMainGame);
+        document.getElementById('back-from-boosts').addEventListener('click', showMainGame);
+        document.getElementById('back-from-tasks').addEventListener('click', showMainGame);
+        document.getElementById('back-from-ref').addEventListener('click', showMainGame);
+
+        // Магазин
+        let currentCategory = 'hats';
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentCategory = btn.dataset.category;
+                renderShop();
+            });
+        });
+
+        function renderShop() {
+            const container = document.getElementById('shop-items');
+            const items = shopItems[currentCategory] || [];
+            container.innerHTML = '';
+            items.forEach(item => {
+                const owned = userData.inventory[userData.character]?.includes(item.id);
+                const equipped = userData.equipped[userData.character]?.[item.category] === item.id;
+                const isBed = item.category === 'beds';
+                const isDecor = item.category === 'decor';
+                let buttonText = 'Купить';
+                if (owned) {
+                    if (isBed) buttonText = userData.selectedBed === item.id ? 'Выбрано' : 'Выбрать';
+                    else if (isDecor) buttonText = userData.selectedDecor === item.id ? 'Выбрано' : 'Выбрать';
+                    else buttonText = equipped ? 'Надето' : 'Надеть';
+                }
+                
+                const div = document.createElement('div');
+                div.className = 'shop-item' + (owned ? ' owned' : '');
+                div.innerHTML = `
+                    <div class="shop-item-icon">${item.icon}</div>
+                    <div class="shop-item-name">${item.name}</div>
+                    <div class="shop-item-price">${item.price}💰</div>
+                    <button class="small-btn" data-id="${item.id}" data-price="${item.price}" ${owned && !isBed && !isDecor ? 'disabled' : ''}>${buttonText}</button>
+                `;
+                container.appendChild(div);
+            });
+
+            // Обработчики покупки/выбора
+            container.querySelectorAll('.small-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const itemId = btn.dataset.id;
+                    const price = parseInt(btn.dataset.price);
+                    handleShopItem(itemId, price);
+                });
+            });
+        }
+
+        function handleShopItem(itemId, price) {
+            // Находим предмет
+            let item = null;
+            for (const cat in shopItems) {
+                item = shopItems[cat].find(i => i.id === itemId);
+                if (item) break;
+            }
+            if (!item) return;
+
+            const owned = userData.inventory[userData.character]?.includes(itemId);
+            const isBed = item.category === 'beds';
+            const isDecor = item.category === 'decor';
+
+            if (!owned && userData.balance < price) return;
+
+            if (!owned) {
+                // Покупка
+                userData.balance -= price;
+                if (!userData.inventory[userData.character]) userData.inventory[userData.character] = [];
+                userData.inventory[userData.character].push(itemId);
+                updateUI();
+            }
+
+            // Выбор лежанки или декора
+            if (isBed) {
+                userData.selectedBed = itemId;
+            } else if (isDecor) {
+                userData.selectedDecor = itemId;
+            } else {
+                // Одежда - экипировка
+                if (!userData.equipped[userData.character]) userData.equipped[userData.character] = {};
+                userData.equipped[userData.character][item.category] = itemId;
+                updateEquippedDisplay();
+            }
+
+            updateScene();
+            renderShop();
+        }
+
+        function updateScene() {
+            // Обновляем лежанку
+            if (userData.selectedBed) {
+                let bedItem = null;
+                for (const cat in shopItems) {
+                    bedItem = shopItems[cat].find(i => i.id === userData.selectedBed);
+                    if (bedItem) break;
+                }
+                if (bedItem) {
+                    gameElements.bedLayer.style.backgroundColor = bedItem.bgStyle || 'transparent';
+                    gameElements.bedLayer.style.backgroundImage = 'none';
+                }
+            } else {
+                gameElements.bedLayer.style.backgroundColor = 'transparent';
+            }
+
+            // Обновляем декор
+            if (userData.selectedDecor) {
+                let decorItem = null;
+                for (const cat in shopItems) {
+                    decorItem = shopItems[cat].find(i => i.id === userData.selectedDecor);
+                    if (decorItem) break;
+                }
+                if (decorItem) {
+                    gameElements.decorLayer.style.backgroundImage = 'none';
+                    gameElements.decorLayer.style.background = decorItem.bgStyle || 'transparent';
+                }
+            } else {
+                gameElements.decorLayer.style.background = 'transparent';
+            }
+        }
+
+        function updateEquippedDisplay() {
+            if (!userData.character) return;
+            const equipped = userData.equipped[userData.character] || {};
+            const items = [];
+            for (const cat in equipped) {
+                const itemId = equipped[cat];
+                for (const c in shopItems) {
+                    const found = shopItems[c].find(i => i.id === itemId);
+                    if (found) {
+                        items.push(found.icon);
+                        break;
+                    }
+                }
+            }
+            gameElements.equippedItems.innerHTML = items.map(icon => `<span class="equipped-item">${icon}</span>`).join('');
+        }
+
+        // Улучшения (как в предыдущей версии)
+        document.getElementById('buy-tap').addEventListener('click', () => buyBoost('tap'));
+        document.getElementById('buy-energy').addEventListener('click', () => buyBoost('energy'));
+        document.getElementById('buy-regen').addEventListener('click', () => buyBoost('regen'));
+        document.getElementById('buy-income').addEventListener('click', () => buyBoost('income'));
+
+        function buyBoost(type) {
+            const costs = { tap: 100, energy: 200, regen: 300, income: 500 };
+            let cost = costs[type] * (userData.boostLevels[type] + 1);
+            if (userData.balance < cost) return;
+            userData.balance -= cost;
+            userData.boostLevels[type]++;
+            if (type === 'tap') userData.tapPower += 1;
+            if (type === 'energy') {
+                userData.maxEnergy += 20;
+                userData.energy += 20;
+            }
+            if (type === 'income') userData.incomePerSec += 1;
+            updateUI();
+            // Обновим цены
+            document.getElementById('boost-tap-price').textContent = costs.tap * (userData.boostLevels.tap + 1);
+            document.getElementById('boost-energy-price').textContent = costs.energy * (userData.boostLevels.energy + 1);
+            document.getElementById('boost-regen-price').textContent = costs.regen * (userData.boostLevels.regen + 1);
+            document.getElementById('boost-income-price').textContent = costs.income * (userData.boostLevels.income + 1);
+        }
+
+        // Интервалы
+        let energyRegenInterval, incomeInterval;
+
+        function startIntervals() {
+            energyRegenInterval = setInterval(() => {
+                if (userData.energy < userData.maxEnergy) {
+                    userData.energy = Math.min(userData.energy + 1, userData.maxEnergy);
+                    updateUI();
+                }
+            }, 2000);
+
+            incomeInterval = setInterval(() => {
+                if (userData.incomePerSec > 0) {
+                    userData.balance += userData.incomePerSec;
+                    updateUI();
+                }
+            }, 1000);
+        }
+
+        function stopIntervals() {
+            clearInterval(energyRegenInterval);
+            clearInterval(incomeInterval);
+        }
+
+        function updateUI() {
+            gameElements.balance.textContent = userData.balance;
+            gameElements.statBalance.textContent = userData.balance;
+            const percent = (userData.energy / userData.maxEnergy) * 100;
+            gameElements.energyFill.style.width = percent + '%';
+            gameElements.energyText.textContent = `${userData.energy}/${userData.maxEnergy}`;
+            gameElements.statEnergy.textContent = `${userData.energy}/${userData.maxEnergy}`;
+            gameElements.tapPower.textContent = userData.tapPower;
+            gameElements.statIncome.textContent = userData.incomePerSec;
+            gameElements.statRefs.textContent = userData.referrals;
+
+            // Обновление заданий
+            document.getElementById('task1-progress').textContent = `${userData.tasks.taps}/100`;
+            const task1Btn = document.getElementById('task1-claim');
+            if (userData.tasks.taps >= 100 && task1Btn.disabled) {
+                task1Btn.disabled = false;
+                task1Btn.onclick = () => {
+                    userData.balance += 50;
+                    userData.tasks.taps = 0;
+                    updateUI();
+                    task1Btn.disabled = true;
+                };
+            }
+        }
+
+        // Реферальная ссылка
+        const refLink = document.getElementById('ref-link');
+        refLink.textContent = `https://t.me/${tg.initDataUnsafe?.user?.username || 'VirtMate_bot'}?start=ref_${tg.initDataUnsafe?.user?.id || ''}`;
+        document.getElementById('copy-ref').addEventListener('click', () => {
+            navigator.clipboard.writeText(refLink.textContent);
+            tg.showAlert('Ссылка скопирована!');
+        });
+
+        // Сохранение при закрытии
+        window.addEventListener('beforeunload', () => {
+            tg.sendData(JSON.stringify({ action: 'save', data: userData }));
+        });
+    </script>
+</body>
+</html>
