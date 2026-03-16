@@ -173,6 +173,20 @@ const showNextNormal = async (ctx, userId) => {
   });
 };
 
+// Команда для запуска BTS Clicker
+bot.command('bts', async (ctx) => {
+  await ctx.reply('🎮 Запустить BTS Clicker', {
+    reply_markup: {
+      inline_keyboard: [[
+        { 
+          text: '🐰 Играть', 
+          web_app: { url: 'https://твой-сайт.com/bts-clicker/' } 
+        }
+      ]]
+    }
+  });
+});
+
 // ============================================
 // КОМАНДЫ АДМИНИСТРАТОРА
 // ============================================
@@ -426,13 +440,42 @@ bot.action('like', async (ctx) => {
 // ============================================
 // ДИЗЛАЙК
 // ============================================
-bot.action('dislike_liker', async (ctx) => {
-  console.log('dislike_liker action started');
+// ============================================
+// ДИЗЛАЙК
+// ============================================
+bot.action('dislike', async (ctx) => {
+  // 1. Обязательно сразу отвечаем на callback, чтобы убрать "часики" на кнопке
   await ctx.answerCbQuery();
-  ctx.session.currentIdx++;
-  await showNextNormal(ctx, ctx.from.id);
-});
+  
+  const fromId = ctx.from.id;
+  const toId = ctx.session?.viewing;
 
+  // 2. Если есть, кому ставим дизлайк — сохраняем это в базу данных
+  if (toId) {
+    try {
+      // Пытаемся создать запись о дизлайке
+      await Like.create({ fromUser: fromId, toUser: toId, type: 'dislike' });
+      console.log(`Пользователь ${fromId} дизлайкнул ${toId}`);
+    } catch (e) {
+      // Если запись уже есть (код 11000) — просто игнорируем
+      if (e.code !== 11000) {
+        console.error('Ошибка при сохранении дизлайка:', e);
+      }
+    }
+  }
+
+  // 3. Короткое сообщение, что действие принято (можно убрать, если мешает)
+  await ctx.reply('👎 Ок');
+
+  // 4. Пытаемся показать следующую анкету
+  try {
+    await showNextProfile(ctx, fromId);
+  } catch (error) {
+    console.error('Ошибка при показе следующей анкеты после дизлайка:', error);
+    // Если showNextProfile упала, просто скажем пользователю, что что-то не так
+    await ctx.reply('Не удалось загрузить следующую анкету. Попробуй ещё раз.');
+  }
+});
 // ============================================
 // НАЗАД ИЗ ПРОСМОТРА
 // ============================================
