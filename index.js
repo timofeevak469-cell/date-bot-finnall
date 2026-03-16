@@ -229,10 +229,11 @@ function mainMenu(user) {
 
 // ---------- Команды администратора ----------
 const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
-const ADMIN_IDS = []; // сюда можно добавить ID других администраторов
+const ADMIN_IDS = [5729593990]; // сюда можно добавить ID других администраторов
 
 // Статистика для владельца и админов
 bot.command('stats', async (ctx) => {
+    console.log('stats command called by user', ctx.from.id);
     const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
     if (!isAdmin) return ctx.reply('Недоступно.');
 
