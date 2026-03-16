@@ -12,15 +12,13 @@ const Match = require('./models/Match');
 // Создаём бота
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// Подключаем сессии в MongoDB
-//const session = new MongoSession({ url: process.env.MONGODB_URI });
-//bot.use(session.middleware());
+// Подключаем сессии (хранятся в файле sessions.json)
 bot.use(new LocalSession({ database: 'sessions.json' }).middleware());
+
 // Подключаемся к базе данных
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('✅ База данных подключена');
-    // Миграция: добавляем поле active старым пользователям
     User.updateMany({ active: { $exists: false } }, { $set: { active: true } })
       .then(result => console.log(`✅ Обновлено ${result.modifiedCount} пользователей: active=true`))
       .catch(err => console.error('❌ Ошибка миграции active:', err));
@@ -59,13 +57,13 @@ async function sendLikeNotification(toUserId, fromUserId) {
   ]));
 }
 
-// ---------- Показать свою анкету (с городом) ----------
+// ---------- Показать свою анкету ----------
 async function showMyProfile(ctx, user) {
   const caption = `${user.name}, ${user.age}, г. ${user.city}\n\n${user.description}`;
   await ctx.replyWithPhoto(user.photoFileId, { caption });
 }
 
-// ---------- Показать следующую анкету для лайков (основной просмотр) ----------
+// ---------- Показать следующую анкету ----------
 async function showNextProfile(ctx, currentUserId) {
   const currentUser = await getUser(currentUserId);
   if (!currentUser) {
@@ -81,9 +79,10 @@ async function showNextProfile(ctx, currentUserId) {
     active: true
   };
 
-  const likedUsers = await Like.find({ fromUser: currentUserId }).select('toUser');
-  const likedIds = likedUsers.map(l => l.toUser);
-  filter.telegramId = { $nin: [currentUserId, ...likedIds] };
+ // Получаем всех, кого пользователь уже лайкнул или дизлайкнул
+const interactedUsers = await Like.find({ fromUser: currentUserId }).select('toUser');
+const interactedIds = interactedUsers.map(l => l.toUser);
+filter.telegramId = { $nin: [currentUserId, ...interactedIds] };
 
   const candidate = await User.findOne(filter);
   if (!candidate) {
@@ -106,7 +105,7 @@ async function showNextProfile(ctx, currentUserId) {
   });
 }
 
-// ---------- Показать следующую анкету в очереди лайков (с городом) ----------
+// ---------- Показать следующую анкету в очереди лайков ----------
 async function showNextLiker(ctx, userId) {
   const likes = await Like.find({ toUser: userId, notified: false }).sort({ createdAt: 1 });
   if (likes.length === 0) {
@@ -171,7 +170,7 @@ async function showNextLiker(ctx, userId) {
   await showNextNormalLiker(ctx, userId);
 }
 
-// Функция для показа обычного лайка (с городом)
+// Функция для показа обычного лайка
 async function showNextNormalLiker(ctx, userId) {
   const queue = ctx.session?.normalLikerQueue;
   const index = ctx.session?.currentNormalIndex || 0;
@@ -209,7 +208,7 @@ async function showNextNormalLiker(ctx, userId) {
   await ctx.replyWithPhoto(liker.photoFileId, { caption, ...keyboard });
 }
 
-// ---------- Главное меню (reply-клавиатура) ----------
+// ---------- Главное меню ----------
 function mainMenu(user) {
   if (!user) {
     return Markup.keyboard([['📝 Создать анкету']]).resize();
@@ -227,24 +226,25 @@ function mainMenu(user) {
   }
 }
 
-// ---------- Команды администратора (ДОЛЖНЫ БЫТЬ ЗДЕСЬ) ----------
-const OWNER_ID = 5729593990;
-const ADMIN_IDS = [5729593990];
+// ---------- Команды администратора ----------
+const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
+const ADMIN_IDS = [5729593990]; // можно добавить других админов
 
+// Статистика
 bot.command('stats', async (ctx) => {
-    console.log('stats command called by user', ctx.from.id);
-    const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
-    if (!isAdmin) return ctx.reply('Недоступно.');
+  const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
+  if (!isAdmin) return ctx.reply('Недоступно.');
 
-    const totalUsers = await User.countDocuments({});
-    const activeUsers = await User.countDocuments({ active: true });
-    const totalLikes = await Like.countDocuments({});
-    const totalMatches = await Match.countDocuments({});
+  const totalUsers = await User.countDocuments({});
+  const activeUsers = await User.countDocuments({ active: true });
+  const totalLikes = await Like.countDocuments({});
+  const totalMatches = await Match.countDocuments({});
 
-    const msg = `📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches}`;
-    await ctx.reply(msg);
+  const msg = `📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches}`;
+  await ctx.reply(msg);
 });
 
+// Рассылка (только для владельца)
 bot.command('broadcast', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return ctx.reply('Только для владельца.');
 
@@ -298,7 +298,7 @@ bot.on('text', async (ctx) => {
   await handleMenu(ctx, userId, text);
 });
 
-// ---------- Регистрация (с добавлением города) ----------
+// ---------- Регистрация ----------
 async function handleRegistration(ctx, userId, text) {
   const step = ctx.session.step;
   try {
@@ -343,7 +343,7 @@ async function handleRegistration(ctx, userId, text) {
         else lookingFor = 'all';
         ctx.session.lookingFor = lookingFor;
         ctx.session.step = 'description';
-        await ctx.reply('Расскажи о себе (с каким запахои должна быть омежка или насколько ревнивым должен быть твой чгчг дадду)');
+        await ctx.reply('Расскажи о себе (с каким запахом должна быть омежка или насколько ревнивым должен быть твой чгчг дадду)');
         break;
       case 'description':
         ctx.session.description = text;
@@ -361,7 +361,7 @@ async function handleRegistration(ctx, userId, text) {
   }
 }
 
-// ---------- Обработка фото (регистрация и редактирование) ----------
+// ---------- Обработка фото ----------
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
   const photos = ctx.message.photo;
@@ -415,7 +415,6 @@ bot.on('photo', async (ctx) => {
 });
 
 // ---------- Обработка инлайн-кнопок ----------
-// Старт: создание новой анкеты
 bot.action('start_new', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -427,7 +426,6 @@ bot.action('start_new', async (ctx) => {
   await ctx.reply('Давай создадим новую анкету.\nКак тебя зовут?');
 });
 
-// Старт: продолжение со старой анкетой
 bot.action('start_old', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -436,7 +434,6 @@ bot.action('start_old', async (ctx) => {
   await ctx.reply('С возвращением!', mainMenu(user));
 });
 
-// Подтверждение после регистрации: "Да"
 bot.action('confirm_ok', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -444,7 +441,6 @@ bot.action('confirm_ok', async (ctx) => {
   await ctx.reply('Отлично!', mainMenu(user));
 });
 
-// Подтверждение после регистрации: "Редактировать"
 bot.action('confirm_edit', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -456,7 +452,6 @@ bot.action('confirm_edit', async (ctx) => {
   ]));
 });
 
-// Редактирование: изменить фото
 bot.action('edit_photo', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -464,7 +459,6 @@ bot.action('edit_photo', async (ctx) => {
   await ctx.reply('Отправь новое фото.');
 });
 
-// Редактирование: изменить описание
 bot.action('edit_description', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -472,7 +466,6 @@ bot.action('edit_description', async (ctx) => {
   await ctx.reply('Напиши новое описание.');
 });
 
-// Редактирование: заполнить анкету заново
 bot.action('edit_restart', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -482,7 +475,6 @@ bot.action('edit_restart', async (ctx) => {
   await ctx.reply('Давай создадим анкету заново.\nКак тебя зовут?');
 });
 
-// Редактирование: отмена
 bot.action('edit_cancel', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -491,7 +483,7 @@ bot.action('edit_cancel', async (ctx) => {
   await ctx.reply('Редактирование отменено.', mainMenu(user));
 });
 
-// Обработчик лайка (в основном просмотре анкет)
+// ========== ОСНОВНОЙ ОБРАБОТЧИК ЛАЙКА (с анкетой и контактом при взаимности) ==========
 bot.action('like', async (ctx) => {
   await ctx.answerCbQuery();
   const fromUserId = ctx.from.id;
@@ -509,8 +501,36 @@ bot.action('like', async (ctx) => {
 
     if (mutual) {
       await Match.create({ users: [fromUserId, toUserId] });
-      await ctx.telegram.sendMessage(fromUserId, '🎉 Взаимная симпатия!');
-      await ctx.telegram.sendMessage(toUserId, '🎉 Взаимная симпатия!');
+
+      // Получаем данные обоих пользователей
+      const fromUserData = await getUser(fromUserId);
+      const toUserData = await getUser(toUserId);
+
+      // Отправляем анкету тому, кто поставил лайк
+      const captionFrom = `🎉 Взаимная симпатия с ${toUserData.name}!\n\n${toUserData.description}`;
+      await ctx.telegram.sendPhoto(fromUserId, toUserData.photoFileId, { caption: captionFrom });
+
+      // Отправляем контакт тому, кто поставил лайк
+      let contactFrom = `👤 Контакт: ${toUserData.name}`;
+      if (toUserData.username) {
+        contactFrom += `\nЮзернейм: @${toUserData.username}\nПерейти: t.me/${toUserData.username}`;
+      } else {
+        contactFrom += `\n(у пользователя нет username)`;
+      }
+      await ctx.telegram.sendMessage(fromUserId, contactFrom);
+
+      // Отправляем анкету тому, кого лайкнули
+      const captionTo = `🎉 Взаимная симпатия с ${fromUserData.name}!\n\n${fromUserData.description}`;
+      await ctx.telegram.sendPhoto(toUserId, fromUserData.photoFileId, { caption: captionTo });
+
+      // Отправляем контакт тому, кого лайкнули
+      let contactTo = `👤 Контакт: ${fromUserData.name}`;
+      if (fromUserData.username) {
+        contactTo += `\nЮзернейм: @${fromUserData.username}\nПерейти: t.me/${fromUserData.username}`;
+      } else {
+        contactTo += `\n(у пользователя нет username)`;
+      }
+      await ctx.telegram.sendMessage(toUserId, contactTo);
     } else {
       await ctx.reply('❤️ Лайк отправлен!');
       await sendLikeNotification(toUserId, fromUserId);
@@ -528,15 +548,33 @@ bot.action('like', async (ctx) => {
   }
 });
 
-// Дизлайк (основной просмотр)
+// ---------- Остальные обработчики инлайн-кнопок ----------
 bot.action('dislike', async (ctx) => {
   await ctx.answerCbQuery();
   const fromUserId = ctx.from.id;
-  await ctx.reply('👎 Пропускаем...');
+  const toUserId = ctx.session?.viewing;
+
+  if (!toUserId) {
+    await showNextProfile(ctx, fromUserId);
+    return;
+  }
+
+  try {
+    // Сохраняем дизлайк в ту же коллекцию, но с type='dislike'
+    await Like.create({ fromUser: fromUserId, toUser: toUserId, type: 'dislike' });
+    await ctx.reply('👎 Пропускаем...');
+  } catch (error) {
+    // Если уже есть запись (лайк или дизлайк), просто игнорируем
+    if (error.code === 11000) {
+      await ctx.reply('👎 Пропускаем...');
+    } else {
+      console.error(error);
+    }
+  }
+
   await showNextProfile(ctx, fromUserId);
 });
 
-// Назад (выход из просмотра анкет)
 bot.action('back', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -548,7 +586,6 @@ bot.action('back', async (ctx) => {
   ]));
 });
 
-// Назад -> Моя анкета
 bot.action('back_myprofile', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -563,7 +600,6 @@ bot.action('back_myprofile', async (ctx) => {
   ]));
 });
 
-// Назад -> Продолжить
 bot.action('back_continue', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -571,7 +607,6 @@ bot.action('back_continue', async (ctx) => {
   await showNextProfile(ctx, userId);
 });
 
-// Назад -> Не искать (скрыть анкету)
 bot.action('back_deactivate', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -581,7 +616,6 @@ bot.action('back_deactivate', async (ctx) => {
   await ctx.reply('Твоя анкета скрыта. Чтобы снова начать поиск, нажми "▶️ Начать поиск" в меню.', mainMenu(user));
 });
 
-// Вернуться в главное меню
 bot.action('back_to_menu', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -590,7 +624,6 @@ bot.action('back_to_menu', async (ctx) => {
   await ctx.reply('Главное меню:', mainMenu(user));
 });
 
-// Обработчик "Да" на уведомление о лайках
 bot.action('view_likers', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -598,13 +631,11 @@ bot.action('view_likers', async (ctx) => {
   await showNextLiker(ctx, userId);
 });
 
-// Обработчик "Нет" на уведомление
 bot.action('skip_likers', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
 });
 
-// Обработчики для кнопок в обычных лайках
 bot.action('like_liker', async (ctx) => {
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
@@ -648,7 +679,7 @@ bot.action('dislike_liker', async (ctx) => {
   await showNextNormalLiker(ctx, userId);
 });
 
-// ---------- Обработка редактирования (ввод описания) ----------
+// ---------- Обработка редактирования ----------
 async function handleEdit(ctx, userId, text) {
   try {
     await updateUserField(userId, 'description', text);
@@ -662,7 +693,7 @@ async function handleEdit(ctx, userId, text) {
   }
 }
 
-// ---------- Обработка главного меню (текстовые кнопки) ----------
+// ---------- Обработка главного меню ----------
 async function handleMenu(ctx, userId, text) {
   const user = await getUser(userId);
   if (!user) {
