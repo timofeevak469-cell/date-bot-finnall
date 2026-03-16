@@ -125,7 +125,7 @@ const showNextLiker = async (ctx, userId) => {
 
   // Показываем взаимных
   for (const { liker } of mutual) {
-    const caption = `${liker.name}, ${liker.age} г., г. ${liker.city} : ''}\n\n${liker.description}`;
+   const caption = `${liker.name}, ${liker.age} г., г. ${liker.city}\n\n${liker.description}`;
     await ctx.replyWithPhoto(liker.photoFileId, { caption });
     const contact = `👤 Контакт: ${liker.name}` + (liker.username ? `\nЮзернейм: @${liker.username}\nПерейти: t.me/${liker.username}` : '\n(нет username)');
     await ctx.reply(contact);
