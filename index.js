@@ -241,8 +241,8 @@ bot.command('stats', async (ctx) => {
     const totalLikes = await Like.countDocuments({});
     const totalMatches = await Match.countDocuments({});
 
-    const msg = 📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches};
-    await ctx.reply(msg);
+    const msg = `📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches};
+    await ctx.reply(msg)`;
 });
 
 // Рассылка (только для владельца)
