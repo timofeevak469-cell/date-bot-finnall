@@ -426,18 +426,11 @@ bot.action('like', async (ctx) => {
 // ============================================
 // ДИЗЛАЙК
 // ============================================
-bot.action('dislike', async (ctx) => {
-  console.log('back action started');
+bot.action('dislike_liker', async (ctx) => {
+  console.log('dislike_liker action started');
   await ctx.answerCbQuery();
-  const fromId = ctx.from.id;
-  const toId = ctx.session?.viewing;
-  if (toId) {
-    try {
-      await Like.create({ fromUser: fromId, toUser: toId, type: 'dislike' });
-    } catch (e) { /* уже есть */ }
-  }
-  await ctx.reply('👎 Ок');
-  await showNextProfile(ctx, fromId);
+  ctx.session.currentIdx++;
+  await showNextNormal(ctx, ctx.from.id);
 });
 
 // ============================================
@@ -509,7 +502,7 @@ bot.action('skip_likers', async (ctx) => {
 });
 
 bot.action('like_liker', async (ctx) => {
-  console.log('back action started');
+  console.log('like_liker action started');
   await ctx.answerCbQuery();
   const { id } = ctx.from;
   const likerId = ctx.session?.currentLikerId;
@@ -519,10 +512,36 @@ bot.action('like_liker', async (ctx) => {
   try {
     await Like.create({ fromUser: id, toUser: likerId, type: 'like' });
     const mutual = await Like.findOne({ fromUser: likerId, toUser: id, type: 'like' });
+
     if (mutual) {
       await Match.create({ users: [id, likerId] });
-      await ctx.telegram.sendMessage(id, '🎉 Взаимная симпатия!');
-      await ctx.telegram.sendMessage(likerId, '🎉 Взаимная симпатия!');
+      
+      // Получаем данные обоих пользователей
+      const fromData = await getUser(id);
+      const toData = await getUser(likerId);
+
+      // Функция для отправки анкеты и ссылки на имя
+      const sendProfileAndLink = async (uid, other) => {
+        // 1. Отправляем анкету
+        const caption = `${other.name}, ${other.age} г., г. ${other.city}\n\n${other.description}`;
+        await ctx.telegram.sendPhoto(uid, other.photoFileId, { caption });
+        
+        // 2. Формируем имя-ссылку
+        let nameLink;
+        if (other.username) {
+          nameLink = `[${other.name}](t.me/${other.username})`;
+        } else {
+          nameLink = `[${other.name}](tg://user?id=${other.telegramId})`;
+        }
+        
+        // 3. Отправляем сообщение с именем-ссылкой
+        const text = `Отлично! Хорошо проведите время. Начинай общаться с ${nameLink}`;
+        await ctx.telegram.sendMessage(uid, text, { parse_mode: 'Markdown' });
+      };
+
+      // Отправляем обоим
+      await sendProfileAndLink(id, toData);
+      await sendProfileAndLink(likerId, fromData);
     } else {
       await ctx.reply('❤️ Лайк отправлен!');
     }
@@ -531,17 +550,9 @@ bot.action('like_liker', async (ctx) => {
     else console.error(e);
   }
 
-  ctx.session.currentIdx++;
+  ctx.session.currentIdx+
   await showNextNormal(ctx, id);
 });
-
-bot.action('dislike_liker', async (ctx) => {
-  console.log('back action started');
-  await ctx.answerCbQuery();
-  ctx.session.currentIdx++;
-  await showNextNormal(ctx, ctx.from.id);
-});
-
 // ============================================
 // ОБРАБОТКА РЕДАКТИРОВАНИЯ ОПИСАНИЯ
 // ============================================
