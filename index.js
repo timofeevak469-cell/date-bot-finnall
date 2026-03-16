@@ -1,100 +1,93 @@
-// Подключаем библиотеки
+// ============================================
+// ДАТИНГ-БОТ (как Дайвинчик)
+// ============================================
+
 require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const mongoose = require('mongoose');
 const LocalSession = require('telegraf-session-local');
 
-// Подключаем модели
+// Модели
 const User = require('./models/User');
 const Like = require('./models/Like');
 const Match = require('./models/Match');
 
-// Создаём бота
+// Инициализация бота
 const bot = new Telegraf(process.env.BOT_TOKEN);
-
-// Подключаем сессии (хранятся в файле sessions.json)
 bot.use(new LocalSession({ database: 'sessions.json' }).middleware());
 
-// Подключаемся к базе данных
+// ============================================
+// ПОДКЛЮЧЕНИЕ К БАЗЕ
+// ============================================
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('✅ База данных подключена');
     User.updateMany({ active: { $exists: false } }, { $set: { active: true } })
-      .then(result => console.log(`✅ Обновлено ${result.modifiedCount} пользователей: active=true`))
-      .catch(err => console.error('❌ Ошибка миграции active:', err));
+      .then(r => console.log(`✅ Обновлено ${r.modifiedCount} пользователей: active=true`))
+      .catch(e => console.error('❌ Ошибка миграции active:', e));
   })
-  .catch(err => console.error('❌ Ошибка подключения к БД:', err));
+  .catch(e => console.error('❌ Ошибка подключения к БД:', e));
 
-// ---------- Вспомогательные функции ----------
-async function getUser(telegramId) {
-  return await User.findOne({ telegramId });
-}
+// ============================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================
+const getUser = async (id) => await User.findOne({ telegramId: id });
+const createUser = async (id, data) => new User({ telegramId: id, ...data, active: true }).save();
+const updateField = async (id, field, value) => {
+  const update = { [field]: value, updatedAt: Date.now() };
+  return await User.findOneAndUpdate({ telegramId: id }, update, { new: true });
+};
 
-async function createUser(telegramId, data) {
-  const user = new User({ telegramId, ...data, active: true });
-  return await user.save();
-}
-
-async function updateUserField(telegramId, field, value) {
-  const update = {};
-  update[field] = value;
-  update.updatedAt = Date.now();
-  return await User.findOneAndUpdate({ telegramId }, update, { new: true });
-}
-
-// Функция отправки уведомления о лайках (кумулятивное)
-async function sendLikeNotification(toUserId, fromUserId) {
+// Отправка кумулятивного уведомления о лайках
+const sendLikeNotification = async (toUserId, fromUserId) => {
   const toUser = await getUser(toUserId);
   if (!toUser) return;
-
   const count = await Like.countDocuments({ toUser: toUserId, notified: false });
   if (count === 0) return;
-
   const text = `✨ У тебя ${count} новых лайков! Посмотрим?`;
   await bot.telegram.sendMessage(toUserId, text, Markup.inlineKeyboard([
-    [Markup.button.callback('Да', 'view_likers')],
-    [Markup.button.callback('Нет', 'skip_likers')]
+    [Markup.button.callback('Да', 'view_likers'), Markup.button.callback('Нет', 'skip_likers')]
   ]));
-}
+};
 
-// ---------- Показать свою анкету ----------
-async function showMyProfile(ctx, user) {
-  const caption = `${user.name}, ${user.age}, г. ${user.city}\n\n${user.description}`;
+// ============================================
+// ГЛАВНОЕ МЕНЮ
+// ============================================
+const mainMenu = (user) => {
+  if (!user) return Markup.keyboard([['📝 Создать анкету']]).resize();
+  return Markup.keyboard([
+    [user.active ? '👀 Смотреть анкеты' : '▶️ Начать поиск', '📝 Моя анкета'],
+    ['✏️ Редактировать анкету']
+  ]).resize();
+};
+
+// ============================================
+// ПОКАЗ АНКЕТ
+// ============================================
+const showMyProfile = async (ctx, user) => {
+  const caption = `${user.name}, ${user.age} г., г. ${user.city}\n\n${user.description}`;
   await ctx.replyWithPhoto(user.photoFileId, { caption });
-}
+};
 
-// Показать следующую анкету
-async function showNextProfile(ctx, currentUserId) {
-  const currentUser = await getUser(currentUserId);
-  if (!currentUser) {
-    await ctx.reply('Сначала создай анкету через /start');
-    return;
-  }
+const showNextProfile = async (ctx, userId) => {
+  const user = await getUser(userId);
+  if (!user) return ctx.reply('Сначала создай анкету через /start');
+
+  // Кого уже лайкнул/дизлайкнул
+  const interacted = await Like.find({ fromUser: userId }).select('toUser');
+  const excludedIds = interacted.map(i => i.toUser);
 
   const filter = {
-    telegramId: { $ne: currentUserId },
-    gender: currentUser.lookingFor === 'all'
-      ? { $in: ['male', 'female', 'other'] }
-      : currentUser.lookingFor,
+    telegramId: { $ne: userId, $nin: excludedIds },
+    gender: user.lookingFor === 'all' ? { $in: ['male', 'female', 'other'] } : user.lookingFor,
     active: true
   };
 
-  // Получаем ВСЕХ пользователей, с которыми уже было взаимодействие (лайк или дизлайк)
-  const interactedUsers = await Like.find({ fromUser: currentUserId }).select('toUser');
-  const interactedIds = interactedUsers.map(l => l.toUser);
-  
-  // Исключаем их из показа
-  filter.telegramId = { $nin: [currentUserId, ...interactedIds] };
-
   const candidate = await User.findOne(filter);
-  if (!candidate) {
-    await ctx.reply('😕 Больше нет анкет для показа. Загляни позже!');
-    return;
-  }
+  if (!candidate) return ctx.reply('😕 Больше нет анкет для показа. Загляни позже!');
 
   ctx.session = { viewing: candidate.telegramId };
-
-  const caption = `${candidate.name}, ${candidate.age}, г. ${candidate.city}\n\n${candidate.description}`;
+  const caption = `${candidate.name}, ${candidate.age} г., г. ${candidate.city}\n\n${candidate.description}`;
   await ctx.replyWithPhoto(candidate.photoFileId, {
     caption,
     ...Markup.inlineKeyboard([
@@ -105,337 +98,211 @@ async function showNextProfile(ctx, currentUserId) {
       ]
     ])
   });
-}
+};
 
-// ---------- Показать следующую анкету в очереди лайков ----------
-async function showNextLiker(ctx, userId) {
+// ============================================
+// ПРОСМОТР ЛАЙКОВ
+// ============================================
+const showNextLiker = async (ctx, userId) => {
   const likes = await Like.find({ toUser: userId, notified: false }).sort({ createdAt: 1 });
-  if (likes.length === 0) {
-    await ctx.reply('Больше нет анкет для просмотра.', mainMenu(await getUser(userId)));
-    return;
-  }
+  if (!likes.length) return ctx.reply('Больше нет анкет для просмотра.', mainMenu(await getUser(userId)));
 
   const likerIds = likes.map(l => l.fromUser);
   const likers = await User.find({ telegramId: { $in: likerIds } });
 
-  const mutualLikers = [];
-  const normalLikers = [];
-
+  const mutual = [], normal = [];
   for (const like of likes) {
     const liker = likers.find(u => u.telegramId === like.fromUser);
     if (!liker) continue;
-
     const isMutual = await Match.exists({ users: { $all: [userId, liker.telegramId] } });
-    if (isMutual) {
-      mutualLikers.push({ like, liker });
-    } else {
-      normalLikers.push({ like, liker });
-    }
+    (isMutual ? mutual : normal).push({ like, liker });
   }
 
-  for (const item of [...mutualLikers, ...normalLikers]) {
+  // Помечаем как уведомлённые
+  for (const item of [...mutual, ...normal]) {
     await Like.updateOne({ _id: item.like._id }, { $set: { notified: true } });
   }
 
   // Показываем взаимных
-  for (const item of mutualLikers) {
-    const { liker } = item;
-    let caption = `${liker.name}, ${liker.age}, г. ${liker.city}`;
-    if (liker.username) {
-      caption += ` (@${liker.username})`;
-    }
-    caption += `\n\n${liker.description}`;
+  for (const { liker } of mutual) {
+    const caption = `${liker.name}, ${liker.age} г., г. ${liker.city} : ''}\n\n${liker.description}`;
     await ctx.replyWithPhoto(liker.photoFileId, { caption });
-
-    let contactMsg = `👤 Контакт: ${liker.name}`;
-    if (liker.username) {
-      contactMsg += `\nЮзернейм: @${liker.username}\nПерейти: t.me/${liker.username}`;
-    } else {
-      contactMsg += `\n(у пользователя нет username)`;
-    }
-    await ctx.reply(contactMsg);
+    const contact = `👤 Контакт: ${liker.name}` + (liker.username ? `\nЮзернейм: @${liker.username}\nПерейти: t.me/${liker.username}` : '\n(нет username)');
+    await ctx.reply(contact);
   }
 
-  if (normalLikers.length === 0) {
-    await ctx.reply('Все анкеты просмотрены!', mainMenu(await getUser(userId)));
-    return;
-  }
+  if (!normal.length) return ctx.reply('Все анкеты просмотрены!', mainMenu(await getUser(userId)));
 
   ctx.session = {
-    normalLikerQueue: normalLikers.map(item => ({
-      likeId: item.like._id.toString(),
-      likerId: item.liker.telegramId
-    })),
-    currentNormalIndex: 0
+    normalQueue: normal.map(i => ({ likeId: i.like._id.toString(), likerId: i.liker.telegramId })),
+    currentIdx: 0
   };
+  await showNextNormal(ctx, userId);
+};
 
-  await showNextNormalLiker(ctx, userId);
-}
-
-// Функция для показа обычного лайка
-async function showNextNormalLiker(ctx, userId) {
-  const queue = ctx.session?.normalLikerQueue;
-  const index = ctx.session?.currentNormalIndex || 0;
-
-  if (!queue || index >= queue.length) {
+const showNextNormal = async (ctx, userId) => {
+  const { normalQueue, currentIdx } = ctx.session || {};
+  if (!normalQueue || currentIdx >= normalQueue.length) {
     ctx.session = null;
-    await ctx.reply('Все анкеты просмотрены!', mainMenu(await getUser(userId)));
-    return;
+    return ctx.reply('Все анкеты просмотрены!', mainMenu(await getUser(userId)));
   }
 
-  const item = queue[index];
+  const item = normalQueue[currentIdx];
   const liker = await getUser(item.likerId);
   if (!liker) {
     await Like.deleteOne({ _id: item.likeId });
-    ctx.session.currentNormalIndex = index + 1;
-    return showNextNormalLiker(ctx, userId);
+    ctx.session.currentIdx = currentIdx + 1;
+    return showNextNormal(ctx, userId);
   }
 
   ctx.session.currentLikerId = liker.telegramId;
   ctx.session.currentLikeId = item.likeId;
 
-  let caption = `${liker.name}, ${liker.age}, г. ${liker.city}`;
-  if (liker.username) {
-    caption += ` (@${liker.username})`;
-  }
-  caption += `\n\n${liker.description}`;
+  const caption = `${liker.name}, ${liker.age} г., г. ${liker.city}${liker.username ? ' (@' + liker.username + ')' : ''}\n\n${liker.description}`;
+  await ctx.replyWithPhoto(liker.photoFileId, {
+    caption,
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('❤️', 'like_liker'), Markup.button.callback('👎', 'dislike_liker')]
+    ])
+  });
+};
 
-  const keyboard = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('❤️', 'like_liker'),
-      Markup.button.callback('👎', 'dislike_liker')
-    ]
-  ]);
+// ============================================
+// КОМАНДЫ АДМИНИСТРАТОРА
+// ============================================
+const OWNER_ID = 5729593990; // ← ЗАМЕНИ НА СВОЙ ID
+const ADMIN_IDS = [5729593990];
 
-  await ctx.replyWithPhoto(liker.photoFileId, { caption, ...keyboard });
-}
-
-// ---------- Главное меню ----------
-function mainMenu(user) {
-  if (!user) {
-    return Markup.keyboard([['📝 Создать анкету']]).resize();
-  }
-  if (user.active) {
-    return Markup.keyboard([
-      ['👀 Смотреть анкеты', '📝 Моя анкета'],
-      ['✏️ Редактировать анкету']
-    ]).resize();
-  } else {
-    return Markup.keyboard([
-      ['▶️ Начать поиск', '📝 Моя анкета'],
-      ['✏️ Редактировать анкету']
-    ]).resize();
-  }
-}
-
-// ---------- Команды администратора ----------
-const OWNER_ID = 5729593990; // ЗАМЕНИ НА СВОЙ ID
-const ADMIN_IDS = [5729593990]; // можно добавить других админов
-
-// Статистика
 bot.command('stats', async (ctx) => {
-  const isAdmin = ctx.from.id === OWNER_ID || ADMIN_IDS.includes(ctx.from.id);
-  if (!isAdmin) return ctx.reply('Недоступно.');
-
-  const totalUsers = await User.countDocuments({});
-  const activeUsers = await User.countDocuments({ active: true });
-  const totalLikes = await Like.countDocuments({});
-  const totalMatches = await Match.countDocuments({});
-
-  const msg = `📊 Статистика:\n👥 Всего пользователей: ${totalUsers}\n✅ Активных: ${activeUsers}\n❤️ Лайков: ${totalLikes}\n💕 Мэтчей: ${totalMatches}`;
-  await ctx.reply(msg);
+  if (!ADMIN_IDS.includes(ctx.from.id) && ctx.from.id !== OWNER_ID)
+    return ctx.reply('Недоступно.');
+  const total = await User.countDocuments();
+  const active = await User.countDocuments({ active: true });
+  const likes = await Like.countDocuments({ type: 'like' });
+  const matches = await Match.countDocuments();
+  await ctx.reply(`📊 Статистика:\n👥 Всего: ${total}\n✅ Активных: ${active}\n❤️ Лайков: ${likes}\n💕 Мэтчей: ${matches}`);
 });
 
-// Рассылка (только для владельца)
 bot.command('broadcast', async (ctx) => {
   if (ctx.from.id !== OWNER_ID) return ctx.reply('Только для владельца.');
-
   const text = ctx.message.text.replace('/broadcast', '').trim();
   if (!text) return ctx.reply('Использование: /broadcast <текст>');
-
   const users = await User.find({}, 'telegramId');
-  let success = 0, fail = 0;
-  await ctx.reply('⏳ Начинаю рассылку...');
-  for (const user of users) {
+  let ok = 0, fail = 0;
+  await ctx.reply('⏳ Рассылка...');
+  for (const u of users) {
     try {
-      await ctx.telegram.sendMessage(user.telegramId, text);
-      success++;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    } catch (e) {
-      fail++;
-    }
+      await ctx.telegram.sendMessage(u.telegramId, text);
+      ok++;
+      await new Promise(r => setTimeout(r, 50));
+    } catch { fail++; }
   }
-  await ctx.reply(`✅ Рассылка завершена.\nУспешно: ${success}\nНе удалось: ${fail}`);
+  await ctx.reply(`✅ Успешно: ${ok}\n❌ Не удалось: ${fail}`);
 });
 
-// ---------- Команда /start ----------
+// ============================================
+// СТАРТ
+// ============================================
 bot.start(async (ctx) => {
-  const userId = ctx.from.id;
-  const user = await getUser(userId);
+  const user = await getUser(ctx.from.id);
   if (!user) {
     ctx.session = { step: 'name' };
-    await ctx.reply('Привет! Давай найдем тебе сладкую омежку или чбчг альфу?).\nКак тебя зовут?');
-  } else {
-    await ctx.reply('Ты уже зарегистрирован. Что хочешь сделать?',
-      Markup.inlineKeyboard([
-        [Markup.button.callback('📝 Создать новую анкету', 'start_new')],
-        [Markup.button.callback('✅ Продолжить со старой', 'start_old')]
-      ]));
+    return ctx.reply('Привет! Давай найдем тебе сладкую омежку или чбчг альфу?)\nКак тебя зовут?');
   }
-});
-
-// ---------- Обработка текстовых сообщений ----------
-bot.on('text', async (ctx) => {
-  const userId = ctx.from.id;
-  const text = ctx.message.text;
-
-  if (ctx.session && ctx.session.step) {
-    await handleRegistration(ctx, userId, text);
-    return;
-  }
-  if (ctx.session && ctx.session.editStep === 'editDescription') {
-    await handleEdit(ctx, userId, text);
-    return;
-  }
-  await handleMenu(ctx, userId, text);
-});
-
-// ---------- Регистрация ----------
-async function handleRegistration(ctx, userId, text) {
-  const step = ctx.session.step;
-  try {
-    switch (step) {
-      case 'name':
-        ctx.session.name = text;
-        ctx.session.step = 'age';
-        await ctx.reply('Сколько тебе лет?');
-        break;
-      case 'age':
-        const age = parseInt(text);
-        if (isNaN(age) || age < 0 || age > 100) {
-          await ctx.reply('Пожалуйста, введи корректный возраст (число от 0 до 100).');
-          return;
-        }
-        ctx.session.age = age;
-        ctx.session.step = 'city';
-        await ctx.reply('Из какого ты города?');
-        break;
-      case 'city':
-        ctx.session.city = text;
-        ctx.session.step = 'gender';
-        await ctx.reply('Твой пол?', Markup.keyboard([
-          ['Я парень', 'Я девушка']
-        ]).oneTime().resize());
-        break;
-      case 'gender':
-        let gender = '';
-        if (text === 'Я парень') gender = 'male';
-        else if (text === 'Я девушка') gender = 'female';
-        else gender = 'other';
-        ctx.session.gender = gender;
-        ctx.session.step = 'lookingFor';
-        await ctx.reply('Кого будем искать?', Markup.keyboard([
-          ['Парни', 'Девушки', 'Все равно']
-        ]).oneTime().resize());
-        break;
-      case 'lookingFor':
-        let lookingFor = '';
-        if (text === 'Парни') lookingFor = 'male';
-        else if (text === 'Девушки') lookingFor = 'female';
-        else lookingFor = 'all';
-        ctx.session.lookingFor = lookingFor;
-        ctx.session.step = 'description';
-        await ctx.reply('Расскажи о себе (с каким запахом должна быть омежка или насколько ревнивым должен быть твой чгчг дадду)');
-        break;
-      case 'description':
-        ctx.session.description = text;
-        ctx.session.step = 'photo';
-        await ctx.reply('Отправь своё фото');
-        break;
-      default:
-        ctx.session = null;
-        await ctx.reply('Что-то пошло не так. Начни заново /start');
-    }
-  } catch (error) {
-    console.error(error);
-    await ctx.reply('Произошла ошибка. Попробуй позже.');
-    ctx.session = null;
-  }
-}
-
-// ---------- Обработка фото ----------
-bot.on('photo', async (ctx) => {
-  const userId = ctx.from.id;
-  const photos = ctx.message.photo;
-  const fileId = photos[photos.length - 1].file_id;
-
-  if (ctx.session && ctx.session.editStep === 'editPhoto') {
-    try {
-      await updateUserField(userId, 'photoFileId', fileId);
-      ctx.session = null;
-      const user = await getUser(userId);
-      await ctx.reply('✅ Фото обновлено!', mainMenu(user));
-    } catch (error) {
-      console.error(error);
-      await ctx.reply('Ошибка при обновлении фото.');
-      ctx.session = null;
-    }
-    return;
-  }
-
-  if (ctx.session && ctx.session.step === 'photo') {
-    try {
-      const userData = {
-        firstName: ctx.from.first_name,
-        username: ctx.from.username,
-        name: ctx.session.name,
-        age: ctx.session.age,
-        city: ctx.session.city,
-        gender: ctx.session.gender,
-        lookingFor: ctx.session.lookingFor,
-        description: ctx.session.description,
-        photoFileId: fileId,
-        active: true
-      };
-      const newUser = await createUser(userId, userData);
-      ctx.session = null;
-
-      await showMyProfile(ctx, newUser);
-      await ctx.reply('Всё верно?', Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Да', 'confirm_ok')],
-        [Markup.button.callback('✏️ Редактировать', 'confirm_edit')]
-      ]));
-    } catch (error) {
-      console.error(error);
-      await ctx.reply('Ошибка при сохранении анкеты. Попробуй ещё раз /start');
-      ctx.session = null;
-    }
-    return;
-  }
-
-  await ctx.reply('Сейчас не нужно фото. Используй меню.');
-});
-
-// ---------- Обработка инлайн-кнопок ----------
-bot.action('start_new', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  await User.deleteOne({ telegramId: userId });
-  await Like.deleteMany({ $or: [{ fromUser: userId }, { toUser: userId }] });
-  await Match.deleteMany({ users: userId });
-  ctx.session = { step: 'name' };
-  await ctx.reply('Давай создадим новую анкету.\nКак тебя зовут?');
-});
-
-bot.action('start_old', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  const user = await getUser(userId);
   await ctx.reply('С возвращением!', mainMenu(user));
 });
 
+// ============================================
+// РЕГИСТРАЦИЯ
+// ============================================
+bot.on('text', async (ctx) => {
+  const { id } = ctx.from;
+  const { step } = ctx.session || {};
+  if (!step) return handleMenu(ctx, id, ctx.message.text);
+
+  try {
+    if (step === 'name') {
+      ctx.session.name = ctx.message.text;
+      ctx.session.step = 'age';
+      await ctx.reply('Сколько тебе лет?');
+    } else if (step === 'age') {
+      const age = parseInt(ctx.message.text);
+      if (isNaN(age) || age < 0 || age > 100)
+        return ctx.reply('Введи число от 0 до 100.');
+      ctx.session.age = age;
+      ctx.session.step = 'city';
+      await ctx.reply('Из какого ты города?');
+    } else if (step === 'city') {
+      ctx.session.city = ctx.message.text;
+      ctx.session.step = 'gender';
+      await ctx.reply('Твой пол?', Markup.keyboard([['Я парень', 'Я девушка']]).oneTime().resize());
+    } else if (step === 'gender') {
+      ctx.session.gender = { 'Я парень': 'male', 'Я девушка': 'female'}[ctx.message.text] || 'other';
+      ctx.session.step = 'lookingFor';
+      await ctx.reply('Кого будем искать??', Markup.keyboard([['Парни', 'Девушки', 'Все равно']]).oneTime().resize());
+    } else if (step === 'lookingFor') {
+      ctx.session.lookingFor = { 'Парни': 'male', 'Девушки': 'female', 'Все равно': 'all' }[ctx.message.text] || 'all';
+      ctx.session.step = 'description';
+      await ctx.reply('Расскажи о себе (с каким запахом омежку хочешь найти или насколько ревнивым должен быть твой чбчг дадду?)');
+    } else if (step === 'description') {
+      ctx.session.description = ctx.message.text;
+      ctx.session.step = 'photo';
+      await ctx.reply('Отправь своё фото.');
+    } else {
+      ctx.session = null;
+      await ctx.reply('Что-то пошло не так. Начни /start');
+    }
+  } catch (e) {
+    console.error(e);
+    await ctx.reply('Ошибка. Попробуй позже.');
+    ctx.session = null;
+  }
+});
+
+// ============================================
+// ФОТО
+// ============================================
+bot.on('photo', async (ctx) => {
+  const { id } = ctx.from;
+  const { step, editStep } = ctx.session || {};
+
+  const fileId = ctx.message.photo.pop().file_id;
+
+  // Редактирование фото
+  if (editStep === 'editPhoto') {
+    await updateField(id, 'photoFileId', fileId);
+    ctx.session = null;
+    return ctx.reply('✅ Фото обновлено!', mainMenu(await getUser(id)));
+  }
+
+  // Завершение регистрации
+  if (step === 'photo') {
+    const newUser = await createUser(id, {
+      firstName: ctx.from.first_name,
+      username: ctx.from.username,
+      name: ctx.session.name,
+      age: ctx.session.age,
+      city: ctx.session.city,
+      gender: ctx.session.gender,
+      lookingFor: ctx.session.lookingFor,
+      description: ctx.session.description,
+      photoFileId: fileId
+    });
+    ctx.session = null;
+    await showMyProfile(ctx, newUser);
+    await ctx.reply('Всё верно?', Markup.inlineKeyboard([
+      [Markup.button.callback('✅ Да', 'confirm_ok')],
+      [Markup.button.callback('✏️ Редактировать', 'confirm_edit')]
+    ]));
+    return;
+  }
+
+  await ctx.reply('Сейчас не нужно фото.');
+});
+
+// ============================================
+// ИНЛАЙН-КНОПКИ
+// ============================================
 bot.action('confirm_ok', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
@@ -449,7 +316,7 @@ bot.action('confirm_edit', async (ctx) => {
   await ctx.reply('Выбери действие:', Markup.inlineKeyboard([
     [Markup.button.callback('1. Изменить фото', 'edit_photo')],
     [Markup.button.callback('2. Изменить описание', 'edit_description')],
-    [Markup.button.callback('3. Заполнить анкету заново', 'edit_restart')],
+    [Markup.button.callback('3. Заполнить заново', 'edit_restart')],
     [Markup.button.callback('4. Отмена', 'edit_cancel')]
   ]));
 });
@@ -471,10 +338,9 @@ bot.action('edit_description', async (ctx) => {
 bot.action('edit_restart', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  await User.deleteOne({ telegramId: userId });
+  await User.deleteOne({ telegramId: ctx.from.id });
   ctx.session = { step: 'name' };
-  await ctx.reply('Давай создадим анкету заново.\nКак тебя зовут?');
+  await ctx.reply('Начнём заново. Как тебя зовут?');
 });
 
 bot.action('edit_cancel', async (ctx) => {
@@ -482,105 +348,69 @@ bot.action('edit_cancel', async (ctx) => {
   await ctx.deleteMessage();
   ctx.session = null;
   const user = await getUser(ctx.from.id);
-  await ctx.reply('Редактирование отменено.', mainMenu(user));
+  await ctx.reply('Отменено.', mainMenu(user));
 });
 
-// ========== ОСНОВНОЙ ОБРАБОТЧИК ЛАЙКА (с анкетой и контактом при взаимности) ==========
+// ============================================
+// ЛАЙК (основной)
+// ============================================
 bot.action('like', async (ctx) => {
   await ctx.answerCbQuery();
-  const fromUserId = ctx.from.id;
-  const toUserId = ctx.session?.viewing;
-
-  if (!toUserId) {
-    await ctx.reply('Ошибка: не выбран пользователь. Начни поиск заново.');
-    return;
-  }
+  const fromId = ctx.from.id;
+  const toId = ctx.session?.viewing;
+  if (!toId) return ctx.reply('Ошибка.');
 
   try {
-    await Like.create({ fromUser: fromUserId, toUser: toUserId });
-
-    const mutual = await Like.findOne({ fromUser: toUserId, toUser: fromUserId });
+    await Like.create({ fromUser: fromId, toUser: toId, type: 'like' });
+    const mutual = await Like.findOne({ fromUser: toId, toUser: fromId, type: 'like' });
 
     if (mutual) {
-      await Match.create({ users: [fromUserId, toUserId] });
+      await Match.create({ users: [fromId, toId] });
+      const [fromData, toData] = await Promise.all([getUser(fromId), getUser(toId)]);
 
-      // Получаем данные обоих пользователей
-      const fromUserData = await getUser(fromUserId);
-      const toUserData = await getUser(toUserId);
+      const sendProfileAndContact = async (uid, other) => {
+        const cap = `${other.name}, ${other.age} г., г. ${other.city}\n\n${other.description}`;
+        await ctx.telegram.sendPhoto(uid, other.photoFileId, { caption: cap });
+        const contact = `👤 Контакт: ${other.name}` + (other.username ? `\nЮзернейм: @${other.username}\nПерейти: t.me/${other.username}` : '');
+        await ctx.telegram.sendMessage(uid, contact);
+      };
 
-      // Отправляем анкету тому, кто поставил лайк
-      const captionFrom = `🎉 Взаимная симпатия с ${toUserData.name}!\n\n${toUserData.description}`;
-      await ctx.telegram.sendPhoto(fromUserId, toUserData.photoFileId, { caption: captionFrom });
-
-      // Отправляем контакт тому, кто поставил лайк
-      let contactFrom = `👤 Контакт: ${toUserData.name}`;
-      if (toUserData.username) {
-        contactFrom += `\nЮзернейм: @${toUserData.username}\nПерейти: t.me/${toUserData.username}`;
-      } else {
-        contactFrom += `\n(у пользователя нет username)`;
-      }
-      await ctx.telegram.sendMessage(fromUserId, contactFrom);
-
-      // Отправляем анкету тому, кого лайкнули
-      const captionTo = `🎉 Взаимная симпатия с ${fromUserData.name}!\n\n${fromUserData.description}`;
-      await ctx.telegram.sendPhoto(toUserId, fromUserData.photoFileId, { caption: captionTo });
-
-      // Отправляем контакт тому, кого лайкнули
-      let contactTo = `👤 Контакт: ${fromUserData.name}`;
-      if (fromUserData.username) {
-        contactTo += `\nЮзернейм: @${fromUserData.username}\nПерейти: t.me/${fromUserData.username}`;
-      } else {
-        contactTo += `\n(у пользователя нет username)`;
-      }
-      await ctx.telegram.sendMessage(toUserId, contactTo);
+      await sendProfileAndContact(fromId, toData);
+      await sendProfileAndContact(toId, fromData);
     } else {
       await ctx.reply('❤️ Лайк отправлен!');
-      await sendLikeNotification(toUserId, fromUserId);
+      await sendLikeNotification(toId, fromId);
     }
-
-    await showNextProfile(ctx, fromUserId);
-  } catch (error) {
-    if (error.code === 11000) {
-      await ctx.reply('Вы уже лайкали этого пользователя.');
-      await showNextProfile(ctx, fromUserId);
-    } else {
-      console.error(error);
-      await ctx.reply('Ошибка при отправке лайка.');
-    }
+    await showNextProfile(ctx, fromId);
+  } catch (e) {
+    if (e.code === 11000) await ctx.reply('Вы уже взаимодействовали с этим человеком.');
+    else console.error(e);
+    await showNextProfile(ctx, fromId);
   }
 });
 
-// ---------- Остальные обработчики инлайн-кнопок ----------
+// ============================================
+// ДИЗЛАЙК
+// ============================================
 bot.action('dislike', async (ctx) => {
   await ctx.answerCbQuery();
-  const fromUserId = ctx.from.id;
-  const toUserId = ctx.session?.viewing;
-
-  if (!toUserId) {
-    await showNextProfile(ctx, fromUserId);
-    return;
+  const fromId = ctx.from.id;
+  const toId = ctx.session?.viewing;
+  if (toId) {
+    try {
+      await Like.create({ fromUser: fromId, toUser: toId, type: 'dislike' });
+    } catch (e) { /* уже есть */ }
   }
-
-  try {
-    // Сохраняем дизлайк в ту же коллекцию, но с type='dislike'
-    await Like.create({ fromUser: fromUserId, toUser: toUserId, type: 'dislike' });
-    await ctx.reply('👎 Пропускаем...');
-  } catch (error) {
-    // Если уже есть запись (лайк или дизлайк), просто игнорируем
-    if (error.code === 11000) {
-      await ctx.reply('👎 Пропускаем...');
-    } else {
-      console.error(error);
-    }
-  }
-
-  await showNextProfile(ctx, fromUserId);
+  await ctx.reply('👎 Ок');
+  await showNextProfile(ctx, fromId);
 });
 
+// ============================================
+// НАЗАД ИЗ ПРОСМОТРА
+// ============================================
 bot.action('back', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
   await ctx.reply('Выбери действие:', Markup.inlineKeyboard([
     [Markup.button.callback('1. Моя анкета', 'back_myprofile')],
     [Markup.button.callback('2. Продолжить', 'back_continue')],
@@ -591,46 +421,44 @@ bot.action('back', async (ctx) => {
 bot.action('back_myprofile', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  const user = await getUser(userId);
+  const user = await getUser(ctx.from.id);
   await showMyProfile(ctx, user);
-  await ctx.reply('Что хочешь сделать?', Markup.inlineKeyboard([
+  await ctx.reply('Что хочешь?', Markup.inlineKeyboard([
     [Markup.button.callback('1. Изменить фото', 'edit_photo')],
     [Markup.button.callback('2. Изменить описание', 'edit_description')],
-    [Markup.button.callback('3. Заполнить анкету заново', 'edit_restart')],
-    [Markup.button.callback('4. Вернуться в меню', 'back_to_menu')]
+    [Markup.button.callback('3. Заполнить заново', 'edit_restart')],
+    [Markup.button.callback('4. В меню', 'back_to_menu')]
   ]));
 });
 
 bot.action('back_continue', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  await showNextProfile(ctx, userId);
+  await showNextProfile(ctx, ctx.from.id);
 });
 
 bot.action('back_deactivate', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  await updateUserField(userId, 'active', false);
-  const user = await getUser(userId);
-  await ctx.reply('Твоя анкета скрыта. Чтобы снова начать поиск, нажми "▶️ Начать поиск" в меню.', mainMenu(user));
+  await updateField(ctx.from.id, 'active', false);
+  const user = await getUser(ctx.from.id);
+  await ctx.reply('Анкета скрыта. Для активации нажми "▶️ Начать поиск".', mainMenu(user));
 });
 
 bot.action('back_to_menu', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  const user = await getUser(userId);
+  const user = await getUser(ctx.from.id);
   await ctx.reply('Главное меню:', mainMenu(user));
 });
 
+// ============================================
+// ПРОСМОТР ЛАЙКОВ – КНОПКИ
+// ============================================
 bot.action('view_likers', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.deleteMessage();
-  const userId = ctx.from.id;
-  await showNextLiker(ctx, userId);
+  await showNextLiker(ctx, ctx.from.id);
 });
 
 bot.action('skip_likers', async (ctx) => {
@@ -640,119 +468,85 @@ bot.action('skip_likers', async (ctx) => {
 
 bot.action('like_liker', async (ctx) => {
   await ctx.answerCbQuery();
-  const userId = ctx.from.id;
+  const { id } = ctx.from;
   const likerId = ctx.session?.currentLikerId;
   const likeId = ctx.session?.currentLikeId;
-
-  if (!likerId || !likeId) {
-    await ctx.reply('Ошибка. Попробуйте снова.');
-    return;
-  }
+  if (!likerId || !likeId) return ctx.reply('Ошибка');
 
   try {
-    await Like.create({ fromUser: userId, toUser: likerId });
-    const mutual = await Like.findOne({ fromUser: likerId, toUser: userId });
+    await Like.create({ fromUser: id, toUser: likerId, type: 'like' });
+    const mutual = await Like.findOne({ fromUser: likerId, toUser: id, type: 'like' });
     if (mutual) {
-      await Match.create({ users: [userId, likerId] });
-      await ctx.telegram.sendMessage(userId, '🎉 Взаимная симпатия!');
+      await Match.create({ users: [id, likerId] });
+      await ctx.telegram.sendMessage(id, '🎉 Взаимная симпатия!');
       await ctx.telegram.sendMessage(likerId, '🎉 Взаимная симпатия!');
     } else {
       await ctx.reply('❤️ Лайк отправлен!');
     }
-  } catch (error) {
-    if (error.code === 11000) {
-      await ctx.reply('Вы уже лайкали этого пользователя.');
-    } else {
-      console.error(error);
-      await ctx.reply('Ошибка при отправке лайка.');
-    }
+  } catch (e) {
+    if (e.code === 11000) await ctx.reply('Уже было');
+    else console.error(e);
   }
 
-  const index = ctx.session.currentNormalIndex + 1;
-  ctx.session.currentNormalIndex = index;
-  await showNextNormalLiker(ctx, userId);
+  ctx.session.currentIdx++;
+  await showNextNormal(ctx, id);
 });
 
-// Дизлайк (основной просмотр)
-bot.action('dislike', async (ctx) => {
+bot.action('dislike_liker', async (ctx) => {
   await ctx.answerCbQuery();
-  const fromUserId = ctx.from.id;
-  const toUserId = ctx.session?.viewing;
-
-  if (!toUserId) {
-    await showNextProfile(ctx, fromUserId);
-    return;
-  }
-
-  try {
-    // Сохраняем дизлайк
-    await Like.create({ fromUser: fromUserId, toUser: toUserId, type: 'dislike' });
-    await ctx.reply('👎 Пропускаем...');
-  } catch (error) {
-    // Если уже есть запись (лайк или дизлайк), просто продолжаем
-    if (error.code === 11000) {
-      await ctx.reply('👎 Пропускаем...');
-    } else {
-      console.error(error);
-    }
-  }
-
-  await showNextProfile(ctx, fromUserId);
+  ctx.session.currentIdx++;
+  await showNextNormal(ctx, ctx.from.id);
 });
 
-// ---------- Обработка редактирования ----------
-async function handleEdit(ctx, userId, text) {
-  try {
-    await updateUserField(userId, 'description', text);
-    ctx.session = null;
-    const user = await getUser(userId);
-    await ctx.reply('✅ Описание обновлено!', mainMenu(user));
-  } catch (error) {
-    console.error(error);
-    await ctx.reply('Ошибка при обновлении описания.');
-    ctx.session = null;
-  }
-}
+// ============================================
+// ОБРАБОТКА РЕДАКТИРОВАНИЯ ОПИСАНИЯ
+// ============================================
+const handleEdit = async (ctx, userId, text) => {
+  await updateField(userId, 'description', text);
+  ctx.session = null;
+  await ctx.reply('✅ Описание обновлено!', mainMenu(await getUser(userId)));
+};
 
-// ---------- Обработка главного меню ----------
-async function handleMenu(ctx, userId, text) {
+// ============================================
+// ОБРАБОТКА МЕНЮ
+// ============================================
+const handleMenu = async (ctx, userId, text) => {
   const user = await getUser(userId);
   if (!user) {
     if (text === '📝 Создать анкету') {
       ctx.session = { step: 'name' };
-      await ctx.reply('Как тебя зовут?');
-    } else {
-      await ctx.reply('Нажми /start, чтобы начать.');
+      return ctx.reply('Как тебя зовут?');
     }
-    return;
+    return ctx.reply('Нажми /start');
   }
 
   if (text === '👀 Смотреть анкеты' || text === '▶️ Начать поиск') {
-    if (text === '▶️ Начать поиск') {
-      await updateUserField(userId, 'active', true);
-    }
-    await showNextProfile(ctx, userId);
-  } else if (text === '📝 Моя анкета') {
+    if (text === '▶️ Начать поиск') await updateField(userId, 'active', true);
+    return showNextProfile(ctx, userId);
+  }
+  if (text === '📝 Моя анкета') {
     await showMyProfile(ctx, user);
-    await ctx.reply('Что хочешь сделать?', Markup.inlineKeyboard([
+    return ctx.reply('Что хочешь?', Markup.inlineKeyboard([
       [Markup.button.callback('1. Изменить фото', 'edit_photo')],
       [Markup.button.callback('2. Изменить описание', 'edit_description')],
-      [Markup.button.callback('3. Заполнить анкету заново', 'edit_restart')],
-      [Markup.button.callback('4. Вернуться в меню', 'back_to_menu')]
+      [Markup.button.callback('3. Заполнить заново', 'edit_restart')],
+      [Markup.button.callback('4. В меню', 'back_to_menu')]
     ]));
-  } else if (text === '✏️ Редактировать анкету') {
-    await ctx.reply('Выбери действие:', Markup.inlineKeyboard([
+  }
+  if (text === '✏️ Редактировать анкету') {
+    return ctx.reply('Выбери действие:', Markup.inlineKeyboard([
       [Markup.button.callback('1. Изменить фото', 'edit_photo')],
       [Markup.button.callback('2. Изменить описание', 'edit_description')],
-      [Markup.button.callback('3. Заполнить анкету заново', 'edit_restart')],
+      [Markup.button.callback('3. Заполнить заново', 'edit_restart')],
       [Markup.button.callback('4. Отмена', 'edit_cancel')]
     ]));
-  } else {
-    await ctx.reply('Не понял команду. Используй кнопки меню.');
   }
-}
+  await ctx.reply('Не понял.', mainMenu(user));
+};
 
-// ---------- Запуск бота ----------
+// ============================================
+// ЗАПУСК
+// ============================================
 bot.launch();
 console.log('🤖 Бот запущен...');
 
