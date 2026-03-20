@@ -164,6 +164,8 @@ const showNextNormal = async (ctx, userId) => {
   ctx.session.currentLikerId = liker.telegramId;
   ctx.session.currentLikeId = item.likeId;
 
+  await ctx.reply('✨ Кому-то понравилась твоя анкета:');
+
   const caption = `${liker.name}, ${liker.age} г., г. ${liker.city}${liker.username ? ' (@' + liker.username + ')' : ''}\n\n${liker.description}`;
   await ctx.replyWithPhoto(liker.photoFileId, {
     caption,
